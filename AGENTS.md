@@ -292,12 +292,26 @@ Output: 01-execution-plan.md
 Stop condition: wait for user approval before finalizing execution plan
 ```
 
-## Context Rules
+## Token Budget Rules
+Use repo artifacts as canonical state. Do not rely on chat history for downstream workflow stages.
 
-- Give subagents only the latest approved artifact plus the minimum necessary repo context.
-- Do not pass raw, unfiltered advisor or planner discussion to executor or QA.
-- Preserve important user constraints in the canonical artifact.
-- If a subagent output conflicts with an approved artifact, stop and ask the user before proceeding.
+When using subagents:
+- Spawn subagents as fresh sessions.
+- Do not fork conversation context.
+- Use `fork_context: false` when the tool supports it, or omit `fork_context` if false is the default.
+- Give each subagent only:
+- the latest approved artifact path;
+- specific repo paths it may inspect;
+- relevant user constraints;
+- the expected output format.
+- Do not pass full chat history, prior tool output, previous subagent transcripts, or full diffs unless the task is patch review.
+- Prefer telling subagents to read canonical artifacts from `.runs/...` directly.
+
+After each approved workflow stage:
+- Ensure the canonical artifact is written.
+- Keep chat summaries short and reference artifact paths instead of restating content.
+- Treat the next stage as starting from the approved artifact, not from accumulated chat context.
+
 
 ## Default Behavior
 
