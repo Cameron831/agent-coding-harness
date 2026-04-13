@@ -29,31 +29,27 @@ Produce a concise `02-issues.md` draft with:
 2. Issue title
 3. Issue title
 
-## Issue 1
-```yaml
-title:
-type:
-priority:
-depends_on:
-labels:
-goal:
-scope:
-acceptance_criteria:
-notes:
-```
+## Issue 1: Title
+Metadata: type; priority; depends_on; labels
 
-## Issue 2
-```yaml
-title:
-type:
-priority:
-depends_on:
-labels:
-goal:
-scope:
-acceptance_criteria:
-notes:
-```
+Goal:
+
+Scope:
+
+Acceptance Criteria:
+
+Notes:
+
+## Issue 2: Title
+Metadata: type; priority; depends_on; labels
+
+Goal:
+
+Scope:
+
+Acceptance Criteria:
+
+Notes:
 ````
 
 Add as many issue drafts as needed, but prefer one cohesive issue when the work has one goal, one acceptance surface, and one verification path.
@@ -66,6 +62,9 @@ Add as many issue drafts as needed, but prefer one cohesive issue when the work 
 - Split when dependencies, risk, ownership, rollout order, or acceptance criteria are meaningfully different.
 - If a split creates issues that are mostly coordination overhead, merge them back into the parent issue draft.
 - Preserve dependencies and sequencing explicitly.
+- Keep type, priority, depends_on, and labels in a compact metadata line or table.
+- Do not create separate body sections for metadata fields when they only contain a bullet or two.
+- When GitHub supports a field directly, such as labels, expect it to be applied to the issue itself instead of duplicated in the body.
 - Do not create GitHub issues.
 - Do not implement code.
 - Do not create execution plans for individual issues.

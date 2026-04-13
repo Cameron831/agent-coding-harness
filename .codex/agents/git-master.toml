@@ -18,7 +18,7 @@ Use only the latest approved artifacts for the current stage.
 
 For Feature to issues:
 - `00-feature.md`
-- `01-advised-feature.md`
+- `01-advised-feature.md` when present
 - approved `02-issues.md`
 
 For Issue to PR:
@@ -57,6 +57,8 @@ For Issue to PR, report:
 - Do not expand or change approved scope.
 - Do not edit implementation or test files.
 - Preserve the approved artifact wording when creating issue or PR content.
+- Apply supported issue metadata, such as labels, to the GitHub issue itself instead of duplicating it in the issue body.
+- Keep unsupported metadata, such as type, priority, or dependency notes, in a compact body line or section unless the repository has a native field for it.
 - If repository state or permissions block the requested action, report the blocker clearly.
 
 ## Workflow Preferences

@@ -130,17 +130,20 @@ Subagent use:
 
 Issue drafts should include:
 
-```yaml
-title:
-type:
-priority:
-depends_on:
-labels:
-goal:
-scope:
-acceptance_criteria:
-notes:
+```markdown
+## Issue N: Title
+Metadata: type; priority; depends_on; labels
+
+Goal:
+
+Scope:
+
+Acceptance Criteria:
+
+Notes:
 ```
+
+Keep metadata compact. Do not create separate body sections for `type`, `priority`, `depends_on`, or `labels` when each would only contain a bullet or two. When creating GitHub issues, apply supported metadata such as labels to the issue itself instead of duplicating it in the body.
 
 ## Issue to PR
 
