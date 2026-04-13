@@ -55,9 +55,70 @@ Artifacts:
     02-issues.md
 ```
 
+Pipeline Modes:
+
+Before starting a Feature to issues workflow, classify the feature as Lightweight, Standard, or Full and record the selected mode and reasoning in the first workflow update.
+
+Hard gates still apply in every mode: ask before finalizing advised feature scope, finalizing issue splits, or creating GitHub issues.
+
+If the feature is already clear and small, prefer Lightweight Mode rather than expanding analysis or splitting the work artificially.
+
+1. Lightweight Mode
+
+Use for small, clear features where the desired outcome, acceptance criteria, and issue boundary are already obvious.
+
+Flow:
+
+```text
+feature
+-> issue draft
+-> GitHub issue created
+```
+
+Required artifacts:
+
+```text
+.runs/<feature-slug>/00-feature.md
+.runs/<feature-slug>/02-issues.md
+```
+
+Subagents: use only if explicitly requested or if ambiguity justifies it. Skip advisor and issues-planner subagents unless needed.
+
+2. Standard Mode
+
+Use for normal feature requests that need scope clarification, tradeoff review, or issue boundary planning.
+
+Flow:
+
+```text
+feature
+-> advised feature
+-> issues
+-> GitHub issues created
+```
+
+Subagents:
+
+- advisor: produce options, tradeoffs, and a recommendation when scope or approach is not obvious.
+- issues-planner: draft focused GitHub issue boundaries, dependencies, acceptance criteria, and sequencing.
+
+3. Full Mode
+
+Use for broad, ambiguous, risky, or cross-cutting features where multiple implementation paths, dependencies, or rollout concerns need explicit review.
+
+Use the full existing Feature to issues workflow and artifact set.
+
+Issue splitting rules:
+
+- Prefer one cohesive issue when the work has one goal, one acceptance surface, and one verification path.
+- Do not split solely by file, layer, artifact, or subagent handoff.
+- Split only when issues can be implemented, reviewed, verified, and rolled back independently.
+- Split when dependencies, risk, ownership, rollout order, or acceptance criteria are meaningfully different.
+- If a split creates issues that are mostly coordination overhead, merge them back into the parent issue draft.
+
 Checkpoints:
 
-- Advise checkpoint: ask for approval before finalizing 01-advised-feature.md.
+- Advise checkpoint: ask for approval before finalizing 01-advised-feature.md when that artifact is used.
 - Issue split checkpoint: ask for approval before finalizing 02-issues.md.
 - Issue creation checkpoint: ask for approval before creating GitHub issues.
 
@@ -114,6 +175,73 @@ Artifacts:
     07-qa-review.md
     08-final-change-summary.md
 ```
+
+Pipeline Modes:
+
+Before starting an Issue to PR workflow, classify the issue as Lightweight, Standard, or Full and record the selected mode and reasoning in the first workflow update.
+
+Hard gates still apply in every mode: ask before starting implementation, expanding or changing approved scope, writing tests that define new behavior, committing, pushing, or opening a pull request.
+
+If a planned issue is so small that the full workflow overhead is larger than the implementation risk, prefer Lightweight Mode rather than expanding the issue artificially.
+
+1. Lightweight Mode
+
+Use for small, low-risk issues such as one-file changes, documentation-only changes, simple SQL/schema edits without runtime behavior changes, mechanical edits with clear acceptance criteria, or changes where automated tests are explicitly out of scope.
+
+Flow:
+
+```text
+GitHub issue
+-> execution plan
+-> implementation
+-> verification log
+-> final approval
+-> commit and PR
+```
+
+Required artifacts:
+
+```text
+.runs/<feature-slug>/issue-<n>/00-issue.md
+.runs/<feature-slug>/issue-<n>/01-execution-plan.md
+.runs/<feature-slug>/issue-<n>/02-change-summary.md
+.runs/<feature-slug>/issue-<n>/03-change-diff.patch
+.runs/<feature-slug>/issue-<n>/06-verification-log.md
+.runs/<feature-slug>/issue-<n>/08-final-change-summary.md
+```
+
+Subagents: use only if explicitly requested or if risk justifies it; prefer at most one implementation or review subagent. Skip separate test-planner and QA subagents unless needed.
+
+2. Standard Mode
+
+Use for normal implementation issues with moderate risk, multiple files, or meaningful tests.
+
+Flow:
+
+```text
+GitHub issue
+-> execution plan
+-> change summary
+-> change diff
+-> test plan
+-> verification log
+-> QA review
+-> final approval
+-> commit and PR
+```
+
+Subagents:
+
+- execution-planner: create an implementation plan for one issue.
+- executor: implement the approved changes.
+- test-execution-planner: create a test plan when tests are needed.
+- qa: review behavior or regression risk when non-trivial.
+
+3. Full Mode
+
+Use for large, risky, or cross-cutting issues such as persistence behavior, Docker/database initialization, CI changes, multi-module app behavior, user-facing behavior changes, or work where missing tests would create meaningful risk.
+
+Use the full existing Issue to PR workflow and artifact set.
 
 Checkpoints:
 
@@ -173,10 +301,11 @@ Stop condition: wait for user approval before finalizing execution plan
 When starting a new feature workflow:
 
 1. Create `.runs/<feature-slug>/`.
-2. Write `00-feature.md`.
-3. Run the advise stage only.
-4. Write `01-advised-feature.md`.
-5. Stop for user approval.
+2. Classify the feature as Lightweight, Standard, or Full and record the reasoning.
+3. Write `00-feature.md`.
+4. Run only the first stage required by the selected mode.
+5. Write the next required artifact for that mode.
+6. Stop for user approval before continuing.
 
 When starting an issue workflow:
 
@@ -191,6 +320,7 @@ When starting an issue workflow:
 - Keep artifacts concise and decision-oriented.
 - Prefer small, reversible implementation steps.
 - Keep each issue focused on one coherent outcome.
+- Avoid splitting issues smaller than their independent implementation and verification value.
 - Record commands run and test results in `06-verification-log.md`.
 - QA findings should prioritize bugs, regressions, missing tests, and scope drift.
 - If verification cannot be run, record why.
