@@ -18,6 +18,16 @@ Early project. The agent list, responsibilities, and workflows are expected to e
 - improve development speed and consistency
 - refine the system through real usage
 
+## Optimizations
+The original full pipeline was very robust but also time consuming and expensive to run. 
+
+To optimize for time and token usage, these changes were made:
+- Subagents no longer fork with context 
+- Subagents now persist through the approval gate so revisions can be handled without creating a new agent
+- Subagent roles were compressed or removed
+- Created artifacts were reduced
+- Prompts were simplified while maintaining the same guidelines
+
 ## Workflow outline
 ### Feature to issues
 Define feature intent -> advisor creates options/tradeoffs and issue drafts -> main agent creates approved GitHub issues
@@ -59,6 +69,3 @@ Artifacts:
 1. Approve
 2. Revise
 
-## Notes
-- QA should review: approved plan + working tree diff + change summary + verification log
-- Interactive brainstorming in ChatGPT
