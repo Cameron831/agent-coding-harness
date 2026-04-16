@@ -18,6 +18,20 @@ Early project. The agent list, responsibilities, and workflows are expected to e
 - improve development speed and consistency
 - refine the system through real usage
 
+## Local observability stack
+Start the local stack:
+
+```powershell
+docker compose up -d
+```
+
+Services:
+- Grafana: http://localhost:3000
+- Prometheus: http://localhost:9090
+- Loki: http://localhost:3100
+- OpenTelemetry Collector OTLP gRPC: localhost:4317
+
+
 ## Optimizations
 The original full pipeline was very robust but also time consuming and expensive to run. 
 
@@ -68,4 +82,3 @@ Artifacts:
 ## Feedback loops
 1. Approve
 2. Revise
-
