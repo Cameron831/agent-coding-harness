@@ -14,7 +14,7 @@ Use `.agents/planner/AGENTS.md` for Feature to Issues work:
 - Draft small, reviewable GitHub issues.
 - Create issues after approval.
 
-### Executor
+### Implementor
 
 Use `.agents/implementor/AGENTS.md` for Issue to PR work:
 

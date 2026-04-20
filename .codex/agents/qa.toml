@@ -66,7 +66,7 @@ Pass, pass with concerns, or changes requested.
 - Use file and artifact references when available.
 - Treat missing or failed verification as a QA risk.
 - Avoid nitpicks unless they affect correctness, maintainability, or reviewability.
-- Keep the review actionable enough for `executor` to address if changes are needed.
+- Keep the review actionable enough for the `implementor` workflow to address if changes are needed.
 
 ## Response Style
 
