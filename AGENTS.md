@@ -16,7 +16,7 @@ Use `.agents/planner/AGENTS.md` for Feature to Issues work:
 
 ### Executor
 
-Use `.agents/executor/AGENTS.md` for Issue to PR work:
+Use `.agents/implementor/AGENTS.md` for Issue to PR work:
 
 - Turn an approved issue into an execution plan.
 - Implement approved changes and tests.

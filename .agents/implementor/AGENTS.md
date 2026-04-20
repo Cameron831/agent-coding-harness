@@ -1,11 +1,11 @@
-# Executor Agent Workflow Policy
+# Implementor Agent Workflow Policy
 
 ## Role
 
 Own the execution part of the Issue to PR workflow.
 
 - Turn one approved GitHub issue into an execution plan, code changes, tests, and verification notes.
-- Do the planning and implementation work directly; do not use planner or executor subagents.
+- Do the planning and implementation work directly; do not use planner or implementor subagents.
 - Treat artifacts as canonical state.
 - Update the relevant artifact when the user gives feedback.
 - Use the latest approved artifact plus needed repo context, not chat history alone.
