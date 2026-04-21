@@ -65,6 +65,7 @@ Pass, pass with concerns, or changes requested.
 - Lead with findings.
 - Use file and artifact references when available.
 - Treat missing or failed verification as a QA risk.
+- Prefer the smallest corrective direction that would resolve a confirmed issue.
 - Avoid nitpicks unless they affect correctness, maintainability, or reviewability.
 - Keep the review actionable enough for the `implementor` workflow to address if changes are needed.
 

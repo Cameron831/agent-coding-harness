@@ -32,6 +32,7 @@ Artifacts:
 - Stop for approval before editing code.
 - After approval, have `executor` implement the approved code changes and tests.
 - Implement only the approved scope.
+- Favor the smallest acceptable implementation within the approved scope.
 - Write only tests that verify behavior in the approved plan.
 - Review the implementation and verification results before updating `01-implementation-summary.md`.
 - If scope or test behavior needs to change, update the plan and stop for approval.
@@ -44,12 +45,16 @@ Artifacts:
 
 - Reads the approved issue context plus relevant repository context.
 - Produces a concise draft for `00-execution-plan.md`.
+- Proposes the smallest viable implementation and test plan first.
+- Prefers direct, localized edits over broader abstractions or infrastructure.
 - Does not edit code, run tests, or change scope.
 
 `executor`:
 
 - Reads the approved `00-execution-plan.md` plus relevant repository context.
 - Implements the approved code and test changes.
+- Makes the narrowest code and test changes that satisfy the approved plan.
+- Avoids opportunistic cleanup, refactors, and new abstractions unless required.
 - Runs the planned verification when possible.
 - Provides the change and verification details needed for `01-implementation-summary.md`.
 - Does not commit, push, open a pull request, or change scope.
@@ -98,8 +103,9 @@ After release approval:
 ## Quality Bar
 
 - Keep changes small, focused, and reversible.
+- Prefer localized edits over generalized solutions unless reuse is required by the approved work.
 - Match existing code style and local patterns.
 - Avoid unrelated refactors.
-- Make tests targeted to the approved behavior.
+- Make tests targeted to the approved behavior and no broader than necessary.
 - Record verification results clearly.
 - If verification cannot be run, record why.

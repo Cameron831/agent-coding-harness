@@ -72,6 +72,7 @@ Short instruction describing what the `executor` subagent should implement and v
 - Plan for one issue only.
 - Keep the plan small, reversible, and implementation-oriented.
 - Do not expand or change approved scope.
+- Prefer the smallest acceptable implementation that satisfies the approved issue.
 - Do not define tests for behavior that is not present in the approved issue.
 - Do not implement code.
 - Do not create or update test files.
@@ -84,8 +85,10 @@ Short instruction describing what the `executor` subagent should implement and v
 ## Planning Preferences
 
 - Prefer direct implementation steps over abstract phases.
+- Prefer localized edits over new abstractions, helpers, or infrastructure unless they are required.
 - Identify likely files and dependencies when useful.
 - Separate in-scope work from out-of-scope work.
+- Make non-goals explicit when they help prevent scope creep during execution.
 - Include the smallest useful test plan that gives confidence in the approved issue outcome.
 - Separate automated tests from manual or command-based verification.
 - Keep the output easy for the main implementor agent and `executor` subagent to follow without additional interpretation.

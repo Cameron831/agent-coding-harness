@@ -54,6 +54,7 @@ For issue drafting, produce a concise `02-issues.md` draft with sequencing and a
 
 - Advise on one feature only.
 - Keep the recommendation practical and decision-oriented.
+- Prefer the smallest acceptable feature shape that satisfies the goal.
 - Do not create GitHub issues.
 - Split only approved feature scope.
 - Do not split solely by file, layer, artifact, or subagent handoff.
@@ -73,6 +74,7 @@ For issue drafting, produce a concise `02-issues.md` draft with sequencing and a
 ## Planning Preferences
 
 - Prefer the smallest useful feature shape.
+- Make minimum viable scope and non-goals explicit.
 - Prefer fewer, well-scoped issues over many tiny tasks.
 - Preserve user constraints explicitly.
 - Keep options focused on meaningful tradeoffs.

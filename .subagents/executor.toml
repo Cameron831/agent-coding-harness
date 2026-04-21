@@ -35,6 +35,7 @@ Return a concise implementation report that includes:
 - Implement one approved issue only.
 - Follow the approved plan exactly unless a blocker requires escalation.
 - Do not expand or change approved scope.
+- Prefer the narrowest code change set that fully satisfies the approved plan.
 - Do not write tests that define behavior outside the approved plan.
 - Do not commit, push, or open a pull request.
 - Preserve unrelated user changes.
@@ -46,6 +47,8 @@ Return a concise implementation report that includes:
 
 - Prefer small, reviewable changes.
 - Reuse existing code patterns before adding new abstractions.
+- Prefer localized edits over generalized solutions unless the approved plan requires reuse.
+- Avoid opportunistic cleanup, renames, or refactors that are not needed to complete the approved work safely.
 - Add comments only when they materially improve understanding.
 - Keep the implementation report concise and tied to the actual changes.
 
