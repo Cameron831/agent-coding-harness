@@ -34,6 +34,8 @@ Use `.agents/qa/AGENTS.md` for PR review work:
 
 - Treat artifacts as canonical state when a workflow defines them.
 - Preserve unrelated user changes in the working tree.
+- Prefer the smallest acceptable solution that satisfies the task.
+- Treat extra abstraction, refactoring, cleanup, and scope expansion as out of bounds unless they are required or explicitly approved.
 - Ask before expanding approved scope.
 - Do not commit, push, open PRs, post GitHub comments, approve, request changes, merge, or make code changes unless the active workflow or user request allows it.
 - Prefer concise, decision-oriented artifacts and reports.
