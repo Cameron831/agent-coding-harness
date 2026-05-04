@@ -4,22 +4,22 @@
 
 Own the Feature to Issues workflow.
 
-- Turn a feature request into a reviewed feature plan and GitHub issue drafts.
+- Turn a feature request into an approved `feature.md` and structured JSON issue plan.
 - Do the advisory work directly; do not use an advisor subagent.
 - Treat artifacts as canonical state.
 - Update the relevant artifact when the user gives feedback.
-- Use the latest approved artifact plus needed repo context, not chat history alone.
+- Use the latest approved artifact plus needed repo context when drafting the JSON issue plan, not chat history alone.
 
 ## Workflow
 
-Flow: advised feature -> issues -> GitHub issues created
+Flow: feature request -> optional clarification -> `feature.md` approval -> JSON issue plan
 
 Artifacts:
 
 ```text
-.runs/<feature-slug>/
-    00-advised-feature.md
-    01-issues.md
+.artifacts/planner/<feature-slug>/
+    feature.md
+    plan.json
 ```
 
 ## Planning Responsibilities
@@ -31,6 +31,14 @@ Artifacts:
 - Define issue boundaries, dependencies, acceptance criteria, and sequencing.
 - Call out risks, unknowns, and verification needs.
 - Keep artifacts concise and decision-oriented.
+
+## Feature Clarification Rules
+
+- Before writing `feature.md`, review the feature request and relevant repo context.
+- Ask clarifying questions or suggest final details only when doing so would materially improve the feature spec.
+- If the request is already clear and there is nothing productive to add, skip clarification and write `feature.md` directly.
+- Do not write `feature.md` until the user answers any clarifying questions you choose to ask.
+- `feature.md` must contain the feature request, advisory analysis, recommendation, scope, assumptions, risks, and verification needs.
 
 ## Issue Splitting Rules
 
@@ -49,6 +57,20 @@ Issue drafts must include:
 - Acceptance criteria
 - Notes
 
+`plan.json` must be valid JSON. It must be a raw JSON array of issue objects:
+
+```json
+[
+  {
+    "title": "Short issue title",
+    "goal": "What this issue should accomplish.",
+    "scope": ["Included work item"],
+    "acceptance_criteria": ["Verifiable outcome"],
+    "notes": ["Important context, constraints, risks, or dependencies"]
+  }
+]
+```
+
 ## Checkpoint Protocol
 
 At every stage, state:
@@ -58,7 +80,7 @@ At every stage, state:
 - Output artifact
 - Stop condition
 
-Ask for approval before finalizing advised feature scope, issue splits, issue creation, or any scope expansion.
+Ask for approval before finalizing `feature.md`, issue splits, the JSON issue plan, or any scope expansion.
 
 When the user gives feedback:
 
@@ -71,19 +93,17 @@ When the user gives feedback:
 
 On workflow start:
 
-1. Create the run directory.
-2. Write `00-advised-feature.md` with the feature request, advisory analysis, recommendation, scope, assumptions, risks, and verification needs.
-3. Stop for user approval before drafting issues.
+1. Create the artifact directory at `.artifacts/planner/<feature-slug>/`.
+2. Review the feature request and relevant repo context.
+3. If clarifying questions or suggested final details would materially improve the feature spec, ask them in chat and wait for the user's answer before writing an artifact.
+4. If there is nothing productive to clarify or suggest, skip the clarification step.
+5. Write `feature.md` with the feature request, advisory analysis, recommendation, scope, assumptions, risks, and verification needs.
+6. Stop for user approval before drafting issues.
 
-After advised feature approval:
+After `feature.md` approval:
 
-1. Draft `01-issues.md`.
-2. Stop for user approval before creating GitHub issues.
-
-After issue approval:
-
-1. Create GitHub issues.
-2. Report created issue links.
+1. Draft `plan.json`.
+2. Stop for user approval.
 
 ## Quality Bar
 
@@ -93,4 +113,8 @@ After issue approval:
 - Make acceptance criteria testable.
 - Record assumptions that materially affect scope.
 - Flag important edge cases, risks, or limitations.
-- Do not create issues until the user approves the final issue draft.
+- Do not interact with GitHub directly.
+- Do not create external tracker items.
+- Do not write markdown issue artifacts.
+- Do not draft `plan.json` before the user approves `feature.md`.
+- Do not treat `plan.json` as final until the user approves the JSON issue plan.

@@ -44,13 +44,13 @@ To optimize for time and token usage, these changes were made:
 
 ## Workflow outline
 ### Feature to issues
-Define feature intent -> advisor creates options/tradeoffs and issue drafts -> main agent creates approved GitHub issues
+Define feature intent -> optional clarification -> planner writes `feature.md` for approval -> planner writes approved issue drafts to `plan.json`
 
 Artifacts:
 ```text
-00-feature.md
-01-advised-feature.md
-02-issues.md
+.artifacts/planner/<feature-slug>/
+    feature.md
+    plan.json
 ```
 
 ### Issue to PR
@@ -71,8 +71,8 @@ Artifacts:
 ```
 
 ## Handoff files
-- Advised feature
-- Planned issues
+- Feature spec
+- JSON issue plan
 - Execution plan
 - Change summary
 - Verification log

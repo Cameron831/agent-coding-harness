@@ -10,9 +10,10 @@ This repository defines three focused agents. Use the agent-specific prompt for 
 
 Use `.agents/planner/AGENTS.md` for Feature to Issues work:
 
-- Turn a feature request into an advised feature plan.
-- Draft small, reviewable GitHub issues.
-- Create issues after approval.
+- Turn a feature request into an approved `feature.md`.
+- Clarify the request when useful, then write `feature.md`.
+- Draft a small, reviewable JSON issue plan after feature approval.
+- Stop after the user approves the JSON issue plan.
 
 ### Implementor
 
