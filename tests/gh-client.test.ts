@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { GhGitHubIssueClient, type GhCommandRunner } from "../src/index.js";
+import { GhGitHubAutomationClient, type GhCommandRunner } from "../src/index.js";
 import type { RepositorySelection } from "../src/index.js";
 
 const repository: RepositorySelection = {
@@ -36,6 +36,19 @@ function issueJson(state = "open"): string {
   });
 }
 
+function pullRequestJson(state = "OPEN"): string {
+  return JSON.stringify({
+    number: 12,
+    title: "Add pull request support",
+    state,
+    url: "https://github.com/example/agent-workforce/pull/12",
+    body: "Implement pull request creation.",
+    headRefName: "issue-8-pr-create",
+    baseRefName: "main",
+    isDraft: true
+  });
+}
+
 test("createIssue creates without JSON, views the issue, and parses JSON", async () => {
   const runner = new FakeRunner();
   runner.results = [
@@ -50,7 +63,7 @@ test("createIssue creates without JSON, views the issue, and parses JSON", async
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.createIssue({
     repository,
@@ -111,7 +124,7 @@ test("createIssue omits --repo and --body when not supplied", async () => {
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.createIssue({ title: "Infer repository" });
 
@@ -136,7 +149,7 @@ test("createIssue omits --repo and --body when not supplied", async () => {
 
 test("getIssue constructs gh issue view with issue number", async () => {
   const runner = new FakeRunner();
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.getIssue({ repository, issueNumber: 6 });
 
@@ -168,7 +181,7 @@ test("closeIssue closes without JSON, views the issue, and parses JSON", async (
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.closeIssue({
     repository,
@@ -214,7 +227,7 @@ test("closeIssue passes not planned reason directly to gh", async () => {
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.closeIssue({
     repository,
@@ -236,7 +249,7 @@ test("closeIssue passes not planned reason directly to gh", async () => {
 
 test("validation failures return before invoking the runner", async () => {
   const runner = new FakeRunner();
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const missingTitle = await client.createIssue({ repository, title: " " });
   const emptyLabel = await client.createIssue({
@@ -277,7 +290,7 @@ test("non-zero gh results return an automation failure", async () => {
       stderr: "could not create issue"
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.createIssue({ repository, title: "Failing issue" });
 
@@ -295,7 +308,7 @@ test("invalid JSON returns an automation failure", async () => {
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.getIssue({ repository, issueNumber: 6 });
 
@@ -313,7 +326,7 @@ test("createIssue returns a failure when the issue URL cannot be parsed", async 
       stderr: ""
     }
   ];
-  const client = new GhGitHubIssueClient(runner);
+  const client = new GhGitHubAutomationClient(runner);
 
   const result = await client.createIssue({ repository, title: "Missing URL" });
 
@@ -332,10 +345,318 @@ test("createIssue returns a failure when the issue URL cannot be parsed", async 
   ]);
 });
 
-test("gh issue client does not expose a pull request placeholder", () => {
+test("createPullRequest creates a PR, views it, and parses JSON", async () => {
   const runner = new FakeRunner();
-  const client = new GhGitHubIssueClient(runner);
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
 
-  assert.equal("createPullRequest" in client, false);
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "issue-8-pr-create",
+    base: "main",
+    body: "Implement pull request creation.",
+    draft: true
+  });
+
+  assert.deepEqual(runner.calls, [
+    [
+      "pr",
+      "create",
+      "--title",
+      "Add pull request support",
+      "--head",
+      "issue-8-pr-create",
+      "--base",
+      "main",
+      "--body",
+      "Implement pull request creation.",
+      "--draft",
+      "--repo",
+      "example/agent-workforce"
+    ],
+    [
+      "pr",
+      "view",
+      "12",
+      "--json",
+      "number,title,state,url,body,headRefName,baseRefName,isDraft",
+      "--repo",
+      "example/agent-workforce"
+    ]
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.pullRequestNumber, 12);
+  assert.equal(result.ok && result.value.state, "open");
+  assert.equal(result.ok && result.value.head, "issue-8-pr-create");
+  assert.equal(result.ok && result.value.base, "main");
+  assert.equal(result.ok && result.value.draft, true);
+  assert.equal(result.ok && result.value.repository, repository);
+});
+
+test("createPullRequest appends a closing reference for linkedIssueNumber", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "issue-8-pr-create",
+    base: "main",
+    body: "Implement pull request creation.",
+    linkedIssueNumber: 8
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(runner.calls[0], [
+    "pr",
+    "create",
+    "--title",
+    "Add pull request support",
+    "--head",
+    "issue-8-pr-create",
+    "--base",
+    "main",
+    "--body",
+    "Implement pull request creation.\n\nCloses #8",
+    "--repo",
+    "example/agent-workforce"
+  ]);
+});
+
+test("createPullRequest uses closing reference as the body when body is omitted", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "issue-8-pr-create",
+    base: "main",
+    linkedIssueNumber: 8
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(runner.calls[0], [
+    "pr",
+    "create",
+    "--title",
+    "Add pull request support",
+    "--head",
+    "issue-8-pr-create",
+    "--base",
+    "main",
+    "--body",
+    "Closes #8",
+    "--repo",
+    "example/agent-workforce"
+  ]);
+});
+
+test("createPullRequest does not duplicate existing closing references", async () => {
+  const fixesRunner = new FakeRunner();
+  fixesRunner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+  const closesRunner = new FakeRunner();
+  closesRunner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+
+  await new GhGitHubAutomationClient(fixesRunner).createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "issue-8-pr-create",
+    base: "main",
+    body: "Fixes #8",
+    linkedIssueNumber: 8
+  });
+  await new GhGitHubAutomationClient(closesRunner).createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "issue-8-pr-create",
+    base: "main",
+    body: "Closes #8",
+    linkedIssueNumber: 8
+  });
+
+  assert.equal(fixesRunner.calls[0][9], "Fixes #8");
+  assert.equal(closesRunner.calls[0][9], "Closes #8");
+});
+
+test("createPullRequest validation failures return before invoking the runner", async () => {
+  const runner = new FakeRunner();
+  const client = new GhGitHubAutomationClient(runner);
+
+  const missingTitle = await client.createPullRequest({
+    repository,
+    title: " ",
+    head: "feature",
+    base: "main"
+  });
+  const missingHead = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: " ",
+    base: "main"
+  });
+  const missingBase = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "feature",
+    base: ""
+  });
+  const invalidRepository = await client.createPullRequest({
+    repository: { owner: "example", name: "" },
+    title: "Add pull request support",
+    head: "feature",
+    base: "main"
+  });
+  const invalidLinkedIssue = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "feature",
+    base: "main",
+    linkedIssueNumber: 0
+  });
+
+  assert.equal(missingTitle.ok, false);
+  assert.equal(!missingTitle.ok && missingTitle.error.code, "validation_failed");
+  assert.equal(missingHead.ok, false);
+  assert.equal(!missingHead.ok && missingHead.error.code, "validation_failed");
+  assert.equal(missingBase.ok, false);
+  assert.equal(!missingBase.ok && missingBase.error.code, "validation_failed");
+  assert.equal(invalidRepository.ok, false);
+  assert.equal(!invalidRepository.ok && invalidRepository.error.code, "validation_failed");
+  assert.equal(invalidLinkedIssue.ok, false);
+  assert.equal(!invalidLinkedIssue.ok && invalidLinkedIssue.error.code, "validation_failed");
   assert.deepEqual(runner.calls, []);
+});
+
+test("createPullRequest returns a failure for non-zero gh results", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 1,
+      stdout: "",
+      stderr: "could not create pull request"
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "unknown");
+  assert.match(!result.ok ? result.error.message : "", /pull request/);
+});
+
+test("createPullRequest returns a failure when the PR URL cannot be parsed", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "created pull request\n",
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "unknown");
+  assert.match(!result.ok ? result.error.message : "", /pull request number/);
+  assert.equal(runner.calls.length, 1);
+});
+
+test("createPullRequest returns a failure for malformed PR JSON", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: JSON.stringify({ number: 12 }),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    repository,
+    title: "Add pull request support",
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "unknown");
+  assert.match(!result.ok ? result.error.message : "", /parse/);
 });

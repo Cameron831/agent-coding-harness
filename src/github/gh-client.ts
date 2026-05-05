@@ -1,4 +1,4 @@
-import type { GitHubIssueClient } from "./client.js";
+import type { GitHubAutomationClient } from "./client.js";
 import {
   LocalGhCommandRunner,
   type GhCommandResult,
@@ -8,14 +8,19 @@ import type {
   AutomationResult,
   CloseIssueInput,
   CreateIssueInput,
+  CreatePullRequestInput,
   GitHubAutomationError,
   IssueDetails,
   IssueIdentifier,
   IssueState,
+  PullRequestDetails,
+  PullRequestState,
   RepositorySelection
 } from "./types.js";
 
 const ISSUE_JSON_FIELDS = "number,title,state,url,body,labels,assignees";
+const PULL_REQUEST_JSON_FIELDS =
+  "number,title,state,url,body,headRefName,baseRefName,isDraft";
 
 interface GhIssueJson {
   number?: unknown;
@@ -27,7 +32,18 @@ interface GhIssueJson {
   assignees?: unknown;
 }
 
-export class GhGitHubIssueClient implements GitHubIssueClient {
+interface GhPullRequestJson {
+  number?: unknown;
+  title?: unknown;
+  state?: unknown;
+  url?: unknown;
+  body?: unknown;
+  headRefName?: unknown;
+  baseRefName?: unknown;
+  isDraft?: unknown;
+}
+
+export class GhGitHubAutomationClient implements GitHubAutomationClient {
   constructor(
     private readonly runner: GhCommandRunner = new LocalGhCommandRunner()
   ) {}
@@ -107,6 +123,51 @@ export class GhGitHubIssueClient implements GitHubIssueClient {
     return this.viewIssue(input.issueNumber, input.repository);
   }
 
+  async createPullRequest(
+    input: CreatePullRequestInput
+  ): Promise<AutomationResult<PullRequestDetails>> {
+    const validationError = validateCreatePullRequestInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const args = [
+      "pr",
+      "create",
+      "--title",
+      input.title,
+      "--head",
+      input.head,
+      "--base",
+      input.base
+    ];
+    const body = buildPullRequestBody(input.body, input.linkedIssueNumber);
+    if (body !== undefined) {
+      args.push("--body", body);
+    }
+    if (input.draft === true) {
+      args.push("--draft");
+    }
+    appendRepositoryArgs(args, input.repository);
+
+    const createResult = await this.runCommand(args);
+    if (!createResult.ok) {
+      return createResult;
+    }
+
+    const pullRequestNumberResult = parseCreatedPullRequestNumber(
+      createResult.value.stdout
+    );
+    if (!pullRequestNumberResult.ok) {
+      return pullRequestNumberResult;
+    }
+
+    return this.viewPullRequest(
+      pullRequestNumberResult.value,
+      input.repository
+    );
+  }
+
   private viewIssue(
     issueNumber: number,
     repository: RepositorySelection | undefined
@@ -138,6 +199,38 @@ export class GhGitHubIssueClient implements GitHubIssueClient {
       return failure({
         code: "unknown",
         message: "Failed to parse gh issue JSON response.",
+        cause
+      });
+    }
+  }
+
+  private async viewPullRequest(
+    pullRequestNumber: number,
+    repository: RepositorySelection
+  ): Promise<AutomationResult<PullRequestDetails>> {
+    const args = [
+      "pr",
+      "view",
+      String(pullRequestNumber),
+      "--json",
+      PULL_REQUEST_JSON_FIELDS
+    ];
+    appendRepositoryArgs(args, repository);
+
+    const result = await this.runCommand(args);
+    if (!result.ok) {
+      return result;
+    }
+
+    try {
+      return {
+        ok: true,
+        value: parsePullRequestDetails(result.value.stdout, repository)
+      };
+    } catch (cause) {
+      return failure({
+        code: "unknown",
+        message: "Failed to parse gh pull request JSON response.",
         cause
       });
     }
@@ -193,6 +286,43 @@ function validateIssueIdentifier(
     return {
       code: "validation_failed",
       message: "Issue number must be a positive integer."
+    };
+  }
+
+  return validateRepository(input.repository);
+}
+
+function validateCreatePullRequestInput(
+  input: CreatePullRequestInput
+): GitHubAutomationError | undefined {
+  if (input.title.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Pull request title is required."
+    };
+  }
+
+  if (input.head.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Pull request head branch is required."
+    };
+  }
+
+  if (input.base.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Pull request base branch is required."
+    };
+  }
+
+  if (
+    input.linkedIssueNumber !== undefined &&
+    (!Number.isInteger(input.linkedIssueNumber) || input.linkedIssueNumber <= 0)
+  ) {
+    return {
+      code: "validation_failed",
+      message: "Linked issue number must be a positive integer."
     };
   }
 
@@ -278,6 +408,39 @@ function parseIssueDetails(
   };
 }
 
+function parsePullRequestDetails(
+  stdout: string,
+  repository: RepositorySelection
+): PullRequestDetails {
+  const parsed = JSON.parse(stdout) as GhPullRequestJson;
+  const state = normalizePullRequestState(parsed.state);
+
+  if (
+    typeof parsed.number !== "number" ||
+    typeof parsed.title !== "string" ||
+    state === undefined ||
+    typeof parsed.url !== "string" ||
+    (parsed.body !== undefined && typeof parsed.body !== "string") ||
+    typeof parsed.headRefName !== "string" ||
+    typeof parsed.baseRefName !== "string" ||
+    (parsed.isDraft !== undefined && typeof parsed.isDraft !== "boolean")
+  ) {
+    throw new Error("Unexpected gh pull request JSON shape.");
+  }
+
+  return {
+    repository,
+    pullRequestNumber: parsed.number,
+    title: parsed.title,
+    state,
+    url: parsed.url,
+    body: parsed.body,
+    head: parsed.headRefName,
+    base: parsed.baseRefName,
+    draft: parsed.isDraft
+  };
+}
+
 function parseCreatedIssueNumber(stdout: string): AutomationResult<number> {
   const match = stdout.match(/\/issues\/(\d+)\b/);
   if (!match) {
@@ -290,8 +453,74 @@ function parseCreatedIssueNumber(stdout: string): AutomationResult<number> {
   return { ok: true, value: Number(match[1]) };
 }
 
+function parseCreatedPullRequestNumber(stdout: string): AutomationResult<number> {
+  const match = stdout.match(/\/pull\/(\d+)\b/);
+  if (!match) {
+    return failure({
+      code: "unknown",
+      message: "Failed to parse created pull request number from gh output."
+    });
+  }
+
+  return { ok: true, value: Number(match[1]) };
+}
+
+function buildPullRequestBody(
+  body: string | undefined,
+  linkedIssueNumber: number | undefined
+): string | undefined {
+  if (linkedIssueNumber === undefined) {
+    return body;
+  }
+
+  if (bodyHasClosingReference(body, linkedIssueNumber)) {
+    return body;
+  }
+
+  const closingReference = `Closes #${linkedIssueNumber}`;
+  if (body === undefined || body.trim() === "") {
+    return closingReference;
+  }
+
+  return `${body.trimEnd()}\n\n${closingReference}`;
+}
+
+function bodyHasClosingReference(
+  body: string | undefined,
+  issueNumber: number
+): boolean {
+  if (body === undefined) {
+    return false;
+  }
+
+  const pattern = new RegExp(
+    String.raw`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#${issueNumber}\b`,
+    "i"
+  );
+  return pattern.test(body);
+}
+
 function isIssueState(value: unknown): value is IssueState {
   return value === "open" || value === "closed";
+}
+
+function normalizePullRequestState(
+  value: unknown
+): PullRequestState | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "open" ||
+    normalized === "closed" ||
+    normalized === "merged"
+  ) {
+    return normalized;
+  }
+
+  return undefined;
 }
 
 function isNamedGhArray<T extends string>(

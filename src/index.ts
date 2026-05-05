@@ -1,8 +1,5 @@
-export type {
-  GitHubAutomationClient,
-  GitHubIssueClient
-} from "./github/client.js";
-export { GhGitHubIssueClient } from "./github/gh-client.js";
+export type { GitHubAutomationClient } from "./github/client.js";
+export { GhGitHubAutomationClient } from "./github/gh-client.js";
 export { LocalGhCommandRunner } from "./github/gh-runner.js";
 export type {
   GhCommandResult,
