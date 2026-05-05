@@ -53,31 +53,25 @@ Artifacts:
     plan.json
 ```
 
-### Issue to PR
-1. Write issue and context -> 00-issue.md
-2. planner produces implementation and test plan -> 01-execution-plan.md
-3. executor implements code and tests -> 02-change-summary.md + 03-verification-log.md
-4. qa reviews plan, working tree diff, change summary, and verification log -> 04-qa-review.md
-5. main agent commits and creates PR after approval
+### Issue to release metadata
+1. Capture the approved issue context.
+2. exec-planner produces `execution-plan.md`.
+3. executor implements the approved code and tests.
+4. implementor verifies the result and produces `release-metadata.json`.
 
 Artifacts:
 ```text
-00-issue.md
-01-execution-plan.md
-02-change-summary.md
-03-verification-log.md
-04-qa-review.md
-05-final-change-summary.md
+.artifacts/implementor/<issue-#>/
+    execution-plan.md
+    release-metadata.json
 ```
 
 ## Handoff files
 - Feature spec
 - JSON issue plan
 - Execution plan
-- Change summary
-- Verification log
 - QA review
-- Final summary
+- Release metadata JSON
 
 ## Feedback loops
 1. Approve
