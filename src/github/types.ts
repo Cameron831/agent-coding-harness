@@ -32,12 +32,12 @@ export type AutomationResult<T> =
     };
 
 export interface IssueIdentifier {
-  repository: RepositorySelection;
+  repository?: RepositorySelection;
   issueNumber: number;
 }
 
 export interface CreateIssueInput {
-  repository: RepositorySelection;
+  repository?: RepositorySelection;
   title: string;
   body?: string;
   labels?: string[];
@@ -45,7 +45,7 @@ export interface CreateIssueInput {
 }
 
 export interface CloseIssueInput extends IssueIdentifier {
-  reason?: "completed" | "not_planned";
+  reason?: "completed" | "not planned" | "duplicate";
 }
 
 export interface IssueDetails extends IssueIdentifier {

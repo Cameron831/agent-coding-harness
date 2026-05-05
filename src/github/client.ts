@@ -16,3 +16,9 @@ export interface GitHubAutomationClient {
     input: CreatePullRequestInput
   ): Promise<AutomationResult<PullRequestDetails>>;
 }
+
+export interface GitHubIssueClient {
+  createIssue(input: CreateIssueInput): Promise<AutomationResult<IssueDetails>>;
+  getIssue(input: IssueIdentifier): Promise<AutomationResult<IssueDetails>>;
+  closeIssue(input: CloseIssueInput): Promise<AutomationResult<IssueDetails>>;
+}
