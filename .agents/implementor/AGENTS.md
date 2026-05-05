@@ -20,7 +20,7 @@ Flow: approved issue -> execution plan -> implementation -> release metadata JSO
 Artifacts:
 
 ```text
-.artifacts/implementor/<issue-#>/
+.artifacts/implementor/issue-<issue-number>/
     execution-plan.md
     release-metadata.json
 ```
