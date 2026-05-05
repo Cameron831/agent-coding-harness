@@ -17,11 +17,12 @@ Use `.agents/planner/AGENTS.md` for Feature to Issues work:
 
 ### Implementor
 
-Use `.agents/implementor/AGENTS.md` for Issue to PR work:
+Use `.agents/implementor/AGENTS.md` for Issue to Release Metadata work:
 
 - Turn an approved issue into an execution plan.
 - Implement approved changes and tests.
-- Verify, commit, push, and open a PR after approval.
+- Verify and produce release metadata JSON with a commit message, PR title, and PR body.
+- Do not interact with GitHub directly.
 
 ### QA
 
