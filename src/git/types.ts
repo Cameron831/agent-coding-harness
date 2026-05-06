@@ -31,6 +31,7 @@ export interface CreateWorktreeInput extends TargetRepositoryPath {
 
 export interface WorktreeDetails extends TargetRepositoryPath, TargetWorktreePath {
   branchName: string;
+  baseRef?: string;
 }
 
 export interface StageFilesInput extends TargetWorktreePath {
