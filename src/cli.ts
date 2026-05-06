@@ -7,7 +7,7 @@ import {
   type PlannerPlanIssueInput,
   type PlannerPlanResult,
   type PlannerPlanValidationError
-} from "./planner/plan.js";
+} from "./parser/plan.js";
 import { GhGitHubAutomationClient } from "./github/gh-client.js";
 import type { GitHubAutomationClient } from "./github/client.js";
 import type {
