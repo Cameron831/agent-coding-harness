@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runPlannerIssueWorkflow } from "../src/workflow/planner-issues.js";
+import { runPlannerIssueWorkflow } from "../src/workflow/create-issues.js";
 import type {
   AutomationResult,
   CloseIssueInput,
