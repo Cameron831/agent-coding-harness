@@ -73,6 +73,14 @@ Artifacts:
 - QA review
 - Release metadata JSON
 
+## Planner issue dry run
+Build the project, then preview the GitHub issues that would be created from a planner `plan.json` artifact:
+
+```powershell
+npm run build
+npm run plan:issues -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name --dry-run
+```
+
 ## Feedback loops
 1. Approve
 2. Revise
