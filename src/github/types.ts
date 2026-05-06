@@ -58,12 +58,12 @@ export interface IssueDetails extends IssueIdentifier {
 }
 
 export interface PullRequestIdentifier {
-  repository: RepositorySelection;
+  repository?: RepositorySelection;
   pullRequestNumber: number;
 }
 
 export interface CreatePullRequestInput {
-  repository: RepositorySelection;
+  repository?: RepositorySelection;
   title: string;
   head: string;
   base: string;

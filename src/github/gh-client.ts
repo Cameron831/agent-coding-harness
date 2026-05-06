@@ -206,7 +206,7 @@ export class GhGitHubAutomationClient implements GitHubAutomationClient {
 
   private async viewPullRequest(
     pullRequestNumber: number,
-    repository: RepositorySelection
+    repository: RepositorySelection | undefined
   ): Promise<AutomationResult<PullRequestDetails>> {
     const args = [
       "pr",
@@ -411,7 +411,7 @@ function parseIssueDetails(
 
 function parsePullRequestDetails(
   stdout: string,
-  repository: RepositorySelection
+  repository: RepositorySelection | undefined
 ): PullRequestDetails {
   const parsed = JSON.parse(stdout) as GhPullRequestJson;
   const state = normalizePullRequestState(parsed.state);
