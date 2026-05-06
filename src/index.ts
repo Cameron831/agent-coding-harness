@@ -9,7 +9,7 @@ export {
   parsePlannerPlanJson,
   renderPlannerIssueBody,
   renderPlannerIssueInput
-} from "./planner/plan.js";
+} from "./parser/plan.js";
 export type {
   GhCommandResult,
   GhCommandRunner
@@ -23,7 +23,7 @@ export type {
   PlannerPlanResult,
   PlannerPlanValidationError,
   RenderedPlannerIssueInput
-} from "./planner/plan.js";
+} from "./parser/plan.js";
 export type {
   AutomationErrorCode,
   AutomationResult,
