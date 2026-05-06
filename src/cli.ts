@@ -8,23 +8,21 @@ import {
 } from "./parser/plan.js";
 import {
   loadReleaseJson,
-  renderReleasePullRequestInput,
   type ImplementorReleaseMetadata,
-  type ReleaseJsonResult,
-  type ReleaseValidationError
+  type ReleaseJsonResult
 } from "./parser/release.js";
-import { GhGitHubAutomationClient } from "./github/gh-client.js";
 import type { GitHubAutomationClient } from "./github/client.js";
-import type {
-  CreatePullRequestInput,
-  PullRequestDetails,
-  RepositorySelection
-} from "./github/types.js";
+import type { RepositorySelection } from "./github/types.js";
 import {
   LocalGitCommandRunner,
   type GitCommandRunner
 } from "./git/git-runner.js";
-import { runPlannerIssueWorkflow } from "./workflow/planner-issues.js";
+import { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
+import {
+  runReleasePullRequestWorkflow,
+  type BranchResolutionResult,
+  type ReleasePullRequestWorkflowOptions
+} from "./workflow/create-pull-request.js";
 
 export interface PlannerIssueCliOptions {
   planPath: string;
@@ -32,13 +30,7 @@ export interface PlannerIssueCliOptions {
   dryRun: boolean;
 }
 
-export interface ReleasePullRequestCliOptions {
-  releasePath: string;
-  repository?: RepositorySelection;
-  base: string;
-  head?: string;
-  dryRun: boolean;
-}
+export type ReleasePullRequestCliOptions = ReleasePullRequestWorkflowOptions;
 
 export type CliOptions = PlannerIssueCliOptions | ReleasePullRequestCliOptions;
 
@@ -46,16 +38,6 @@ export type CliParseResult =
   | {
       ok: true;
       value: CliOptions;
-    }
-  | {
-      ok: false;
-      message: string;
-    };
-
-export type BranchResolutionResult =
-  | {
-      ok: true;
-      branchName: string;
     }
   | {
       ok: false;
@@ -250,7 +232,7 @@ export async function runCli(
   }
 
   if ("releasePath" in parsed.value) {
-    return runReleasePullRequestCli(parsed.value, {
+    return runReleasePullRequestWorkflow(parsed.value, {
       stdout,
       stderr,
       loadRelease,
@@ -269,75 +251,6 @@ export async function runCli(
     githubClient: options.githubClient,
     createGitHubClient: options.createGitHubClient
   });
-}
-
-async function runReleasePullRequestCli(
-  cliOptions: ReleasePullRequestCliOptions,
-  dependencies: Required<
-    Pick<RunCliOptions, "stdout" | "stderr" | "loadRelease" | "resolveCurrentBranch">
-  > &
-    Pick<RunCliOptions, "githubClient" | "createGitHubClient">
-): Promise<number> {
-  const release = await dependencies.loadRelease(cliOptions.releasePath);
-  if (!release.ok) {
-    dependencies.stderr(formatReleaseValidationErrors(release.errors));
-    return 1;
-  }
-
-  const rendered = renderReleasePullRequestInput(release.value);
-  const head = await resolvePullRequestHead(cliOptions, dependencies.resolveCurrentBranch);
-  if (!head.ok) {
-    dependencies.stderr(formatBranchResolutionFailure(head.message));
-    return 1;
-  }
-
-  const input = toCreatePullRequestInput(cliOptions, rendered, head.branchName);
-
-  if (cliOptions.dryRun) {
-    dependencies.stdout(formatPullRequestDryRunOutput(input));
-    return 0;
-  }
-
-  const client =
-    dependencies.githubClient ??
-    dependencies.createGitHubClient?.() ??
-    new GhGitHubAutomationClient();
-  const result = await client.createPullRequest(input);
-
-  if (!result.ok) {
-    dependencies.stderr(
-      formatPullRequestCreationFailure(input.title, result.error.message)
-    );
-    return 1;
-  }
-
-  dependencies.stdout(formatPullRequestCreationSuccess(result.value));
-  return 0;
-}
-
-function toCreatePullRequestInput(
-  cliOptions: ReleasePullRequestCliOptions,
-  rendered: { title: string; body: string },
-  head: string
-): CreatePullRequestInput {
-  return {
-    repository: cliOptions.repository,
-    title: rendered.title,
-    body: rendered.body,
-    base: cliOptions.base,
-    head
-  };
-}
-
-async function resolvePullRequestHead(
-  cliOptions: ReleasePullRequestCliOptions,
-  resolveCurrentBranchFn: () => Promise<BranchResolutionResult>
-): Promise<BranchResolutionResult> {
-  if (cliOptions.head !== undefined) {
-    return { ok: true, branchName: cliOptions.head };
-  }
-
-  return resolveCurrentBranchFn();
 }
 
 async function resolveCurrentBranch(
@@ -369,57 +282,6 @@ async function resolveCurrentBranch(
   }
 
   return { ok: true, branchName };
-}
-
-function formatPullRequestDryRunOutput(input: CreatePullRequestInput): string {
-  const lines = [
-    "Release pull request dry run:",
-    `Repository: ${formatRepository(input.repository)}`,
-    `Base: ${input.base}`,
-    `Head: ${input.head}`,
-    `Title: ${input.title}`,
-    "",
-    input.body ?? ""
-  ];
-
-  return lines.join("\n");
-}
-
-function formatReleaseValidationErrors(
-  errors: readonly ReleaseValidationError[]
-): string {
-  return [
-    "Release metadata validation failed:",
-    ...errors.map((error) => `- ${error.message}`)
-  ].join("\n");
-}
-
-function formatBranchResolutionFailure(message: string): string {
-  return [
-    "Current branch resolution failed:",
-    message,
-    "Provide --head explicitly."
-  ].join("\n");
-}
-
-function formatPullRequestCreationSuccess(
-  pullRequest: PullRequestDetails
-): string {
-  return [
-    "Created GitHub pull request:",
-    `- #${pullRequest.pullRequestNumber}: ${pullRequest.title} (${pullRequest.url})`
-  ].join("\n");
-}
-
-function formatPullRequestCreationFailure(title: string, message: string): string {
-  return [
-    `GitHub pull request creation failed: ${title}`,
-    message
-  ].join("\n");
-}
-
-function formatRepository(repository: RepositorySelection | undefined): string {
-  return repository ? `${repository.owner}/${repository.name}` : "(inferred by gh)";
 }
 
 function usageFailure(message: string): CliParseResult {
