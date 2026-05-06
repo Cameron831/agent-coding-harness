@@ -10,6 +10,12 @@ export {
   renderPlannerIssueBody,
   renderPlannerIssueInput
 } from "./parser/plan.js";
+export {
+  loadReleaseJson,
+  parseReleaseJson,
+  renderReleasePullRequestBody,
+  renderReleasePullRequestInput
+} from "./parser/release.js";
 export type {
   GhCommandResult,
   GhCommandRunner
@@ -24,6 +30,13 @@ export type {
   PlannerPlanValidationError,
   RenderedPlannerIssueInput
 } from "./parser/plan.js";
+export type {
+  ImplementorReleaseMetadata,
+  ImplementorReleasePullRequestMetadata,
+  ReleaseJsonResult,
+  ReleaseValidationError,
+  RenderedReleasePullRequestInput
+} from "./parser/release.js";
 export type {
   AutomationErrorCode,
   AutomationResult,
