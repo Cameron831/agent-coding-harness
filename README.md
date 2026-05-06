@@ -93,6 +93,25 @@ The command validates the full plan before creating the first issue. Creation is
 
 Re-running live creation can create duplicate GitHub issues. Use `--dry-run` first and only run live mode once for a given approved plan unless duplicates are intended.
 
+## Target repository workflow
+This repository coordinates agent workflow artifacts and release metadata. Code mutations happen in the target repository selected for the issue, usually from a separate git worktree.
+
+Prerequisites:
+- Git installed and available on `PATH`
+- Node.js and npm installed for this workspace
+- A clean target repository checkout with the needed remotes configured
+- Permission to create branches and push to the target repository remote
+
+Manual flow:
+1. Create a target repository worktree and branch with `git -C <target-repo> worktree add -b <branch-name> <worktree-path> <base-ref>`.
+2. Run the implementation agent from the target worktree so code edits and tests apply there.
+3. Review and stage only the intended files with `git -C <worktree-path> add -- <files>`.
+4. Commit with `git -C <worktree-path> commit -m "<message>"`.
+5. Push with `git -C <worktree-path> push -u origin <branch-name>`.
+6. After the worktree is clean and no longer needed, remove it with `git -C <target-repo> worktree remove <worktree-path>`.
+
+The local git automation follows the same boundary: this workspace stores coordination artifacts, while git commands use explicit target repository or target worktree paths.
+
 ## Feedback loops
 1. Approve
 2. Revise
