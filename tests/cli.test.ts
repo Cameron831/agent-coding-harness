@@ -9,8 +9,16 @@ import {
   runCli
 } from "../src/cli.js";
 import type {
+  AutomationResult,
+  CloseIssueInput,
+  CreateIssueInput,
+  CreatePullRequestInput,
+  GitHubAutomationClient,
+  IssueDetails,
+  IssueIdentifier,
   PlannerPlanIssueInput,
-  PlannerPlanResult
+  PlannerPlanResult,
+  PullRequestDetails
 } from "../src/index.js";
 
 const validIssue: PlannerPlanIssueInput = {
@@ -23,6 +31,76 @@ const validIssue: PlannerPlanIssueInput = {
   ],
   notes: ["Do not instantiate the GitHub issue creation client."]
 };
+
+const secondValidIssue: PlannerPlanIssueInput = {
+  title: "Add live planner issue creation",
+  goal: "Create planned GitHub issues from a validated planner artifact.",
+  scope: ["Convert issue input.", "Call the GitHub automation client."],
+  acceptance_criteria: [
+    "Issues are created in plan order.",
+    "Creation stops on the first failure."
+  ],
+  notes: ["Do not construct gh commands in the CLI."]
+};
+
+class FakeGitHubClient implements GitHubAutomationClient {
+  readonly createIssueInputs: CreateIssueInput[] = [];
+
+  constructor(
+    private readonly createIssueResults: AutomationResult<IssueDetails>[]
+  ) {}
+
+  async createIssue(
+    input: CreateIssueInput
+  ): Promise<AutomationResult<IssueDetails>> {
+    this.createIssueInputs.push(input);
+    const result = this.createIssueResults.shift();
+    return (
+      result ?? {
+        ok: false,
+        error: {
+          code: "unknown",
+          message: "Unexpected createIssue call."
+        }
+      }
+    );
+  }
+
+  async getIssue(
+    _input: IssueIdentifier
+  ): Promise<AutomationResult<IssueDetails>> {
+    throw new Error("getIssue should not be called by CLI tests.");
+  }
+
+  async closeIssue(
+    _input: CloseIssueInput
+  ): Promise<AutomationResult<IssueDetails>> {
+    throw new Error("closeIssue should not be called by CLI tests.");
+  }
+
+  async createPullRequest(
+    _input: CreatePullRequestInput
+  ): Promise<AutomationResult<PullRequestDetails>> {
+    throw new Error("createPullRequest should not be called by CLI tests.");
+  }
+}
+
+function successfulIssue(
+  issueNumber: number,
+  title: string,
+  url = `https://github.com/owner/name/issues/${issueNumber}`
+): AutomationResult<IssueDetails> {
+  return {
+    ok: true,
+    value: {
+      repository: { owner: "owner", name: "name" },
+      issueNumber,
+      title,
+      state: "open",
+      url
+    }
+  };
+}
 
 test("parses --plan, --repo, and --dry-run", () => {
   const result = parseCliArgs([
@@ -139,6 +217,118 @@ test("dry-run prints planned issue titles and rendered bodies", async () => {
   assert.match(stdout.join("\n"), /- Parse CLI arguments\./);
 });
 
+test("dry-run does not create or initialize a GitHub client", async () => {
+  const stdout: string[] = [];
+  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
+    return { ok: true, value: [validIssue] };
+  };
+
+  const exitCode = await runCli(["--plan", "plan.json", "--dry-run"], {
+    loadPlan,
+    stdout: (message) => stdout.push(message),
+    createGitHubClient: () => {
+      throw new Error("GitHub client should not be created during dry-run.");
+    }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join("\n"), /Planner issue dry run: 1 issue/);
+});
+
+test("live creation converts planner issues and forwards repository", async () => {
+  const client = new FakeGitHubClient([
+    successfulIssue(42, validIssue.title)
+  ]);
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
+    return { ok: true, value: [validIssue] };
+  };
+
+  const exitCode = await runCli(["--plan", "plan.json", "--repo", "owner/name"], {
+    loadPlan,
+    githubClient: client,
+    stdout: (message) => stdout.push(message),
+    stderr: (message) => stderr.push(message)
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.length, 0);
+  assert.equal(client.createIssueInputs.length, 1);
+  assert.deepEqual(client.createIssueInputs[0]?.repository, {
+    owner: "owner",
+    name: "name"
+  });
+  assert.equal(client.createIssueInputs[0]?.title, validIssue.title);
+  assert.match(client.createIssueInputs[0]?.body ?? "", /## Goal/);
+  assert.match(
+    client.createIssueInputs[0]?.body ?? "",
+    /Preview planned GitHub issues without mutating GitHub/
+  );
+});
+
+test("live creation runs sequentially in plan order", async () => {
+  const client = new FakeGitHubClient([
+    successfulIssue(1, validIssue.title),
+    successfulIssue(2, secondValidIssue.title)
+  ]);
+  const stdout: string[] = [];
+  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
+    return { ok: true, value: [validIssue, secondValidIssue] };
+  };
+
+  const exitCode = await runCli(["--plan", "plan.json"], {
+    loadPlan,
+    githubClient: client,
+    stdout: (message) => stdout.push(message)
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(
+    client.createIssueInputs.map((input) => input.title),
+    [validIssue.title, secondValidIssue.title]
+  );
+  assert.match(stdout.join("\n"), /Created 2 GitHub issues/);
+  assert.match(stdout.join("\n"), /#1: Add issue dry-run CLI/);
+  assert.match(stdout.join("\n"), /https:\/\/github.com\/owner\/name\/issues\/2/);
+});
+
+test("live creation stops on first failure and reports partial creation", async () => {
+  const client = new FakeGitHubClient([
+    successfulIssue(1, validIssue.title),
+    {
+      ok: false,
+      error: {
+        code: "permission_denied",
+        message: "gh lacks permission to create issues."
+      }
+    }
+  ]);
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
+    return { ok: true, value: [validIssue, secondValidIssue, validIssue] };
+  };
+
+  const exitCode = await runCli(["--plan", "plan.json"], {
+    loadPlan,
+    githubClient: client,
+    stdout: (message) => stdout.push(message),
+    stderr: (message) => stderr.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stdout.length, 0);
+  assert.equal(client.createIssueInputs.length, 2);
+  assert.match(
+    stderr.join("\n"),
+    /GitHub issue creation failed at issue 2: Add live planner issue creation/
+  );
+  assert.match(stderr.join("\n"), /gh lacks permission to create issues/);
+  assert.match(stderr.join("\n"), /Created 1 GitHub issue before failure/);
+  assert.match(stderr.join("\n"), /#1: Add issue dry-run CLI/);
+});
+
 test("invalid plan validation returns non-zero with validation messages", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cli-plan-invalid-"));
   const planPath = join(directory, "plan.json");
@@ -150,6 +340,28 @@ test("invalid plan validation returns non-zero with validation messages", async 
   });
 
   assert.equal(exitCode, 1);
+  assert.match(stderr.join("\n"), /Planner plan validation failed/);
+  assert.match(stderr.join("\n"), /Issue 0 field goal is required/);
+});
+
+test("live creation validates the full plan before creating issues", async () => {
+  const client = new FakeGitHubClient([successfulIssue(1, validIssue.title)]);
+  const stderr: string[] = [];
+  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
+    return {
+      ok: false,
+      errors: [{ message: "Issue 0 field goal is required." }]
+    };
+  };
+
+  const exitCode = await runCli(["--plan", "plan.json"], {
+    loadPlan,
+    githubClient: client,
+    stderr: (message) => stderr.push(message)
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(client.createIssueInputs.length, 0);
   assert.match(stderr.join("\n"), /Planner plan validation failed/);
   assert.match(stderr.join("\n"), /Issue 0 field goal is required/);
 });
@@ -175,20 +387,3 @@ test("invalid --repo fails before loading the plan", async () => {
   assert.match(stderr.join("\n"), /Repository must use exact owner\/name format/);
 });
 
-test("--plan without --dry-run returns unsupported mode without loading the plan", async () => {
-  let loadInvoked = false;
-  const stderr: string[] = [];
-  const loadPlan = async (): Promise<PlannerPlanResult<PlannerPlanIssueInput[]>> => {
-    loadInvoked = true;
-    return { ok: true, value: [validIssue] };
-  };
-
-  const exitCode = await runCli(["--plan", "plan.json"], {
-    loadPlan,
-    stderr: (message) => stderr.push(message)
-  });
-
-  assert.equal(exitCode, 1);
-  assert.equal(loadInvoked, false);
-  assert.match(stderr.join("\n"), /Live GitHub issue creation is out of scope/);
-});

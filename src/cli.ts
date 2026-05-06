@@ -8,7 +8,13 @@ import {
   type PlannerPlanResult,
   type PlannerPlanValidationError
 } from "./planner/plan.js";
-import type { RepositorySelection } from "./github/types.js";
+import { GhGitHubAutomationClient } from "./github/gh-client.js";
+import type { GitHubAutomationClient } from "./github/client.js";
+import type {
+  CreateIssueInput,
+  IssueDetails,
+  RepositorySelection
+} from "./github/types.js";
 
 export interface CliOptions {
   planPath: string;
@@ -32,15 +38,17 @@ export interface RunCliOptions {
   loadPlan?: (
     path: string
   ) => Promise<PlannerPlanResult<PlannerPlanIssueInput[]>>;
+  githubClient?: GitHubAutomationClient;
+  createGitHubClient?: () => GitHubAutomationClient;
 }
 
 export function formatUsage(): string {
   return [
-    "Usage: agent-workforce-plan-issues --plan <path> [--repo owner/name] --dry-run",
+    "Usage: agent-workforce-plan-issues --plan <path> [--repo owner/name] [--dry-run]",
     "",
     "Options:",
     "  --plan <path>       Path to a planner plan.json artifact.",
-    "  --repo owner/name   Optional GitHub repository context for output.",
+    "  --repo owner/name   Optional GitHub repository context.",
     "  --dry-run           Print planned issues without creating them."
   ].join("\n");
 }
@@ -143,24 +151,67 @@ export async function runCli(
     return 1;
   }
 
-  if (!parsed.value.dryRun) {
-    stderr(
-      [
-        "Live GitHub issue creation is out of scope for this command.",
-        "Re-run with --dry-run to preview planned issues without mutation."
-      ].join("\n")
-    );
-    return 1;
-  }
-
   const plan = await loadPlan(parsed.value.planPath);
   if (!plan.ok) {
     stderr(formatValidationErrors(plan.errors));
     return 1;
   }
 
-  stdout(formatDryRunOutput(plan.value, parsed.value.repository));
+  if (parsed.value.dryRun) {
+    stdout(formatDryRunOutput(plan.value, parsed.value.repository));
+    return 0;
+  }
+
+  const client =
+    options.githubClient ??
+    options.createGitHubClient?.() ??
+    new GhGitHubAutomationClient();
+
+  return createPlannerIssues(plan.value, parsed.value.repository, client, stdout, stderr);
+}
+
+async function createPlannerIssues(
+  issues: readonly PlannerPlanIssueInput[],
+  repository: RepositorySelection | undefined,
+  client: GitHubAutomationClient,
+  stdout: (message: string) => void,
+  stderr: (message: string) => void
+): Promise<number> {
+  const createdIssues: IssueDetails[] = [];
+
+  for (const [index, issue] of issues.entries()) {
+    const input = toCreateIssueInput(issue, repository);
+    const result = await client.createIssue(input);
+
+    if (!result.ok) {
+      stderr(
+        formatIssueCreationFailure(
+          createdIssues,
+          index + 1,
+          input.title,
+          result.error.message
+        )
+      );
+      return 1;
+    }
+
+    createdIssues.push(result.value);
+  }
+
+  stdout(formatIssueCreationSuccess(createdIssues));
   return 0;
+}
+
+function toCreateIssueInput(
+  issue: PlannerPlanIssueInput,
+  repository: RepositorySelection | undefined
+): CreateIssueInput {
+  const rendered = renderPlannerIssueInput(issue);
+  return {
+    repository,
+    title: rendered.title,
+    body: rendered.body
+  };
 }
 
 function formatDryRunOutput(
@@ -190,6 +241,41 @@ function formatValidationErrors(
     "Planner plan validation failed:",
     ...errors.map((error) => `- ${error.message}`)
   ].join("\n");
+}
+
+function formatIssueCreationSuccess(createdIssues: readonly IssueDetails[]): string {
+  return [
+    `Created ${createdIssues.length} GitHub issue${createdIssues.length === 1 ? "" : "s"}:`,
+    ...formatCreatedIssueLines(createdIssues)
+  ].join("\n");
+}
+
+function formatIssueCreationFailure(
+  createdIssues: readonly IssueDetails[],
+  issueIndex: number,
+  title: string,
+  message: string
+): string {
+  const lines = [
+    `GitHub issue creation failed at issue ${issueIndex}: ${title}`,
+    message
+  ];
+
+  if (createdIssues.length > 0) {
+    lines.push(
+      "",
+      `Created ${createdIssues.length} GitHub issue${createdIssues.length === 1 ? "" : "s"} before failure:`,
+      ...formatCreatedIssueLines(createdIssues)
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function formatCreatedIssueLines(createdIssues: readonly IssueDetails[]): string[] {
+  return createdIssues.map(
+    (issue) => `- #${issue.issueNumber}: ${issue.title} (${issue.url})`
+  );
 }
 
 function usageFailure(message: string): CliParseResult {

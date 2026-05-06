@@ -383,11 +383,12 @@ function parseIssueDetails(
   repository: RepositorySelection | undefined
 ): IssueDetails {
   const parsed = JSON.parse(stdout) as GhIssueJson;
+  const state = normalizeIssueState(parsed.state);
 
   if (
     typeof parsed.number !== "number" ||
     typeof parsed.title !== "string" ||
-    !isIssueState(parsed.state) ||
+    state === undefined ||
     typeof parsed.url !== "string" ||
     (parsed.body !== undefined && typeof parsed.body !== "string") ||
     !isNamedGhArray(parsed.labels, "name") ||
@@ -400,7 +401,7 @@ function parseIssueDetails(
     repository,
     issueNumber: parsed.number,
     title: parsed.title,
-    state: parsed.state,
+    state,
     url: parsed.url,
     body: parsed.body,
     labels: parsed.labels.map((label) => label.name),
@@ -502,6 +503,15 @@ function bodyHasClosingReference(
 
 function isIssueState(value: unknown): value is IssueState {
   return value === "open" || value === "closed";
+}
+
+function normalizeIssueState(value: unknown): IssueState | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  return isIssueState(normalized) ? normalized : undefined;
 }
 
 function normalizePullRequestState(
