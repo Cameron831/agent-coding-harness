@@ -422,6 +422,54 @@ test("createPullRequest creates a PR, views it, and parses JSON", async () => {
   assert.equal(result.ok && result.value.repository, repository);
 });
 
+test("createPullRequest omits repository args when repository is not supplied", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "https://github.com/example/agent-workforce/pull/12\n",
+      stderr: ""
+    },
+    {
+      exitCode: 0,
+      stdout: pullRequestJson(),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.createPullRequest({
+    title: "Infer pull request repository",
+    head: "feature",
+    base: "main",
+    body: "Create a PR with gh repository inference."
+  });
+
+  assert.deepEqual(runner.calls, [
+    [
+      "pr",
+      "create",
+      "--title",
+      "Infer pull request repository",
+      "--head",
+      "feature",
+      "--base",
+      "main",
+      "--body",
+      "Create a PR with gh repository inference."
+    ],
+    [
+      "pr",
+      "view",
+      "12",
+      "--json",
+      "number,title,state,url,body,headRefName,baseRefName,isDraft"
+    ]
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.repository, undefined);
+});
+
 test("createPullRequest appends a closing reference for linkedIssueNumber", async () => {
   const runner = new FakeRunner();
   runner.results = [
