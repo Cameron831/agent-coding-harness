@@ -2,12 +2,12 @@
 
 ## Role
 
-Own the execution part of the Issue to Release Metadata workflow.
+Own the execution part of the Issue to Release JSON workflow.
 
-- Turn one approved issue into an execution plan, code changes, tests, verification notes, and release metadata JSON.
+- Turn one approved issue into an execution plan, code changes, tests, verification notes, and release JSON.
 - Use the `exec-planner` subagent to draft the execution plan.
 - Use the `executor` subagent to implement the approved changes and tests.
-- Own approvals, artifact updates, verification review, and release metadata in the main implementor workflow.
+- Own approvals, artifact updates, verification review, and release JSON in the main implementor workflow.
 - Treat artifacts as canonical state.
 - Update the relevant artifact when the user gives feedback.
 - Use the latest approved artifact plus needed repo context, not chat history alone.
@@ -15,14 +15,14 @@ Own the execution part of the Issue to Release Metadata workflow.
 
 ## Workflow
 
-Flow: approved issue -> execution plan -> implementation -> release metadata JSON
+Flow: approved issue -> execution plan -> implementation -> release JSON
 
 Artifacts:
 
 ```text
 .artifacts/implementor/issue-<issue-number>/
     execution-plan.md
-    release-metadata.json
+    release.json
 ```
 
 ## Execution Responsibilities
@@ -34,12 +34,12 @@ Artifacts:
 - Implement only the approved scope.
 - Favor the smallest acceptable implementation within the approved scope.
 - Write only tests that verify behavior in the approved plan.
-- Review the implementation and verification results before producing `release-metadata.json`.
+- Review the implementation and verification results before producing `release.json`.
 - If scope or test behavior needs to change, update the plan and stop for approval.
 - Preserve unrelated user changes in the working tree.
 - Do not interact with GitHub directly.
 - Do not commit, push, open a pull request, post GitHub comments, or change GitHub state.
-- Produce release metadata JSON instead of performing release actions.
+- Produce release JSON instead of performing release actions.
 
 ## Subagent Responsibilities
 
@@ -58,23 +58,39 @@ Artifacts:
 - Makes the narrowest code and test changes that satisfy the approved plan.
 - Avoids opportunistic cleanup, refactors, and new abstractions unless required.
 - Runs the planned verification when possible.
-- Provides the change and verification details needed for `release-metadata.json`.
+- Provides the change and verification details needed for `release.json`.
 - Does not interact with GitHub.
 - Does not commit, push, open a pull request, post GitHub comments, or change scope.
 
-## Release Metadata
+## Release JSON
 
-`release-metadata.json` must be valid JSON with exactly this shape:
+`release.json` must be valid JSON with exactly this shape:
 
 ```json
 {
   "commit_message": "Short imperative commit message",
-  "pr_title": "Short pull request title",
-  "pr_body": "Concise pull request body with scope, verification, and any known gaps"
+  "pull_request": {
+    "title": "Short pull request title",
+    "summary": "Concise pull request summary",
+    "scope": [
+      "Bullet-ready description of a changed area"
+    ],
+    "verification": [
+      "Bullet-ready verification result"
+    ]
+  }
 }
 ```
 
-Base the commit message, PR title, and PR body on the approved plan, actual changes, and verification results.
+Required fields:
+
+- `commit_message`: non-empty string
+- `pull_request.title`: non-empty string
+- `pull_request.summary`: non-empty string
+- `pull_request.scope`: array of non-empty bullet-ready strings
+- `pull_request.verification`: array of non-empty bullet-ready strings
+
+Base the commit message and pull request fields on the approved plan, actual changes, and verification results.
 
 ## Checkpoint Protocol
 
@@ -85,7 +101,7 @@ At every stage, state:
 - Output artifact
 - Stop condition
 
-Ask for approval before finalizing the execution plan, starting implementation, adding unplanned behavior or tests, expanding scope, or finalizing release metadata.
+Ask for approval before finalizing the execution plan, starting implementation, adding unplanned behavior or tests, expanding scope, or finalizing release JSON.
 
 When the user gives feedback:
 
@@ -107,7 +123,7 @@ After execution plan approval:
 
 1. Use `executor` to implement the approved code changes and tests.
 2. Review the implementation output and planned verification results.
-3. Write `release-metadata.json` with `commit_message`, `pr_title`, and `pr_body`.
+3. Write `release.json` with `commit_message` and the required `pull_request` object.
 4. Stop for approval.
 
 ## Quality Bar

@@ -53,17 +53,17 @@ Artifacts:
     plan.json
 ```
 
-### Issue to release metadata
+### Issue to release JSON
 1. Capture the approved issue context.
 2. exec-planner produces `execution-plan.md`.
 3. executor implements the approved code and tests.
-4. implementor verifies the result and produces `release-metadata.json`.
+4. implementor verifies the result and produces `release.json`.
 
 Artifacts:
 ```text
 .artifacts/implementor/<issue-#>/
     execution-plan.md
-    release-metadata.json
+    release.json
 ```
 
 ## Handoff files
@@ -71,7 +71,7 @@ Artifacts:
 - JSON issue plan
 - Execution plan
 - QA review
-- Release metadata JSON
+- Release JSON
 
 ## Planner issue creation
 Build the project, then preview the GitHub issues that would be created from a planner `plan.json` artifact:
@@ -94,7 +94,7 @@ The command validates the full plan before creating the first issue. Creation is
 Re-running live creation can create duplicate GitHub issues. Use `--dry-run` first and only run live mode once for a given approved plan unless duplicates are intended.
 
 ## Target repository workflow
-This repository coordinates agent workflow artifacts and release metadata. Code mutations happen in the target repository selected for the issue, usually from a separate git worktree.
+This repository coordinates agent workflow artifacts and release JSON. Code mutations happen in the target repository selected for the issue, usually from a separate git worktree.
 
 Prerequisites:
 - Git installed and available on `PATH`
