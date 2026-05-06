@@ -24,7 +24,7 @@ class FakeRunner implements GhCommandRunner {
   }
 }
 
-function issueJson(state = "open"): string {
+function issueJson(state = "OPEN"): string {
   return JSON.stringify({
     number: 6,
     title: "Add gh issue client",
@@ -165,6 +165,23 @@ test("getIssue constructs gh issue view with issue number", async () => {
     ]
   ]);
   assert.equal(result.ok, true);
+});
+
+test("getIssue normalizes uppercase issue state from gh JSON", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: issueJson("CLOSED"),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.getIssue({ repository, issueNumber: 6 });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.state, "closed");
 });
 
 test("closeIssue closes without JSON, views the issue, and parses JSON", async () => {

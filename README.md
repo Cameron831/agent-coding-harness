@@ -73,13 +73,25 @@ Artifacts:
 - QA review
 - Release metadata JSON
 
-## Planner issue dry run
+## Planner issue creation
 Build the project, then preview the GitHub issues that would be created from a planner `plan.json` artifact:
 
 ```powershell
 npm run build
 npm run plan:issues -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name --dry-run
 ```
+
+To create the issues in GitHub, omit `--dry-run`:
+
+```powershell
+npm run plan:issues -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name
+```
+
+Live creation uses the local GitHub CLI authentication through the repository automation client. Before running it, install `gh`, authenticate with `gh auth login`, and make sure the authenticated account can create issues in the target repository. If `--repo` is omitted, the GitHub CLI repository context is used.
+
+The command validates the full plan before creating the first issue. Creation is sequential in plan order and stops on the first failure. If a later issue fails, the output lists any issues already created so they can be reconciled manually.
+
+Re-running live creation can create duplicate GitHub issues. Use `--dry-run` first and only run live mode once for a given approved plan unless duplicates are intended.
 
 ## Feedback loops
 1. Approve
