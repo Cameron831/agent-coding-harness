@@ -1,5 +1,6 @@
 export type { GitHubAutomationClient } from "./github/client.js";
 export type { GitAutomationClient } from "./git/client.js";
+export { LocalGitAutomationClient } from "./git/git-client.js";
 export { GhGitHubAutomationClient } from "./github/gh-client.js";
 export { LocalGhCommandRunner } from "./github/gh-runner.js";
 export { LocalGitCommandRunner } from "./git/git-runner.js";
