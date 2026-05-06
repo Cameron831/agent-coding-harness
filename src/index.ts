@@ -16,6 +16,7 @@ export {
   renderReleasePullRequestBody,
   renderReleasePullRequestInput
 } from "./parser/release.js";
+export { runPlannerIssueWorkflow } from "./workflow/planner-issues.js";
 export type {
   GhCommandResult,
   GhCommandRunner
@@ -37,6 +38,10 @@ export type {
   ReleaseValidationError,
   RenderedReleasePullRequestInput
 } from "./parser/release.js";
+export type {
+  PlannerIssueWorkflowDependencies,
+  PlannerIssueWorkflowOptions
+} from "./workflow/planner-issues.js";
 export type {
   AutomationErrorCode,
   AutomationResult,
