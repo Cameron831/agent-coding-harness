@@ -19,6 +19,10 @@ export {
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
 export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
+export {
+  buildPreparePrompt,
+  renderPreparePrompt
+} from "./workflow/prepare/prompt-builder.js";
 export { prepareIssueWorkspace } from "./workflow/prepare/workspace-prep.js";
 export type {
   GhCommandResult,
@@ -59,6 +63,11 @@ export type {
   WritePrepareArtifactsInput,
   WritePrepareArtifactsResult
 } from "./workflow/prepare/artifact-writer.js";
+export type {
+  BuildPreparePromptInput,
+  PreparePromptVariant,
+  RenderPreparePromptInput
+} from "./workflow/prepare/prompt-builder.js";
 export type {
   PreparedIssueWorkspace,
   PrepareIssueWorkspaceDependencies,
