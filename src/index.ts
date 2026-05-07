@@ -18,6 +18,7 @@ export {
 } from "./parser/release.js";
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
+export { prepareIssueWorkspace } from "./workflow/prepare/workspace-prep.js";
 export type {
   GhCommandResult,
   GhCommandRunner
@@ -48,6 +49,12 @@ export type {
   ReleasePullRequestWorkflowDependencies,
   ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+export type {
+  PreparedIssueWorkspace,
+  PrepareIssueWorkspaceDependencies,
+  PrepareIssueWorkspaceInput,
+  PrepareIssueWorkspaceResult
+} from "./workflow/prepare/workspace-prep.js";
 export type {
   AutomationErrorCode,
   AutomationResult,
