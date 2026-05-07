@@ -18,6 +18,10 @@ export {
 } from "./parser/release.js";
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
+export {
+  prepareIssueWorkflow,
+  runPrepareWorkflow
+} from "./workflow/prepare.js";
 export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
 export {
   buildPreparePrompt,
@@ -54,6 +58,18 @@ export type {
   ReleasePullRequestWorkflowDependencies,
   ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+export type {
+  PrepareArtifactWriter,
+  PreparePromptRenderer,
+  PrepareWorkflowDependencies,
+  PrepareWorkflowError,
+  PrepareWorkflowFailureStage,
+  PrepareWorkflowOptions,
+  PrepareWorkflowResult,
+  PrepareWorkflowSettings,
+  PrepareWorkflowSuccess,
+  PrepareWorkspaceFunction
+} from "./workflow/prepare.js";
 export type {
   PrepareArtifactWriterInput,
   PrepareArtifactWriterResult,
