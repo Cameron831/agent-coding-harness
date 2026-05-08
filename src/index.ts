@@ -20,6 +20,9 @@ export {
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
 export {
+  writeImplementArtifacts
+} from "./workflow/implement/artifact-writer.js";
+export {
   buildImplementCodexConfig,
   implementIssueWorkflow,
   implementReleaseOutputSchema,
@@ -65,6 +68,15 @@ export type {
   ReleasePullRequestWorkflowDependencies,
   ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+export type {
+  ImplementArtifactWriterInput,
+  ImplementArtifactWriterResult,
+  ImplementRunArtifact,
+  ImplementRunArtifactUpdate,
+  ImplementRunStatus,
+  WriteImplementArtifactsInput,
+  WriteImplementArtifactsResult
+} from "./workflow/implement/artifact-writer.js";
 export type {
   ImplementCodexClient,
   ImplementCodexClientFactory,
