@@ -4,7 +4,9 @@ import type {
   AutomationResult,
   CleanupWorktreeResult,
   CommitResult,
+  GetChangedFilesResult,
   GetDiffResult,
+  GetHeadResult,
   GitAutomationClient,
   GitCommandResult,
   GitCommandRunner,
@@ -39,6 +41,18 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
       return ok<GetDiffResult>({
         targetWorktreePath: input.targetWorktreePath,
         diff: "diff --git a/src/index.ts b/src/index.ts\n"
+      });
+    },
+    async getHead(input) {
+      return ok<GetHeadResult>({
+        targetWorktreePath: input.targetWorktreePath,
+        head: "abc123"
+      });
+    },
+    async getChangedFiles(input) {
+      return ok<GetChangedFilesResult>({
+        targetWorktreePath: input.targetWorktreePath,
+        files: ["src/index.ts"]
       });
     },
     async commit(input) {
@@ -78,6 +92,12 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
   const diff = await fakeClient.getDiff({
     targetWorktreePath
   });
+  const head = await fakeClient.getHead({
+    targetWorktreePath
+  });
+  const changedFiles = await fakeClient.getChangedFiles({
+    targetWorktreePath
+  });
   const commit = await fakeClient.commit({
     targetWorktreePath,
     message: "Add Git automation contract"
@@ -97,6 +117,8 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
   assert.equal(worktree.ok && worktree.value.targetRepositoryPath, targetRepositoryPath);
   assert.equal(staged.ok && staged.value.files.length, 2);
   assert.equal(diff.ok && diff.value.diff, "diff --git a/src/index.ts b/src/index.ts\n");
+  assert.equal(head.ok && head.value.head, "abc123");
+  assert.deepEqual(changedFiles.ok && changedFiles.value.files, ["src/index.ts"]);
   assert.equal(commit.ok && commit.value.commitSha, "abc123");
   assert.equal(push.ok && push.value.remoteName, "origin");
   assert.equal(cleanup.ok && cleanup.value.removed, true);

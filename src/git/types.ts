@@ -48,6 +48,18 @@ export interface GetDiffResult extends TargetWorktreePath {
   diff: string;
 }
 
+export interface GetHeadInput extends TargetWorktreePath {}
+
+export interface GetHeadResult extends TargetWorktreePath {
+  head: string;
+}
+
+export interface GetChangedFilesInput extends TargetWorktreePath {}
+
+export interface GetChangedFilesResult extends TargetWorktreePath {
+  files: string[];
+}
+
 export interface CommitInput extends TargetWorktreePath {
   message: string;
 }
