@@ -4,8 +4,12 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  GetChangedFilesInput,
+  GetChangedFilesResult,
   GetDiffInput,
   GetDiffResult,
+  GetHeadInput,
+  GetHeadResult,
   GitAutomationResult,
   PushBranchInput,
   PushBranchResult,
@@ -20,6 +24,10 @@ export interface GitAutomationClient {
   ): Promise<GitAutomationResult<WorktreeDetails>>;
   stageFiles(input: StageFilesInput): Promise<GitAutomationResult<StageFilesResult>>;
   getDiff(input: GetDiffInput): Promise<GitAutomationResult<GetDiffResult>>;
+  getHead(input: GetHeadInput): Promise<GitAutomationResult<GetHeadResult>>;
+  getChangedFiles(
+    input: GetChangedFilesInput
+  ): Promise<GitAutomationResult<GetChangedFilesResult>>;
   commit(input: CommitInput): Promise<GitAutomationResult<CommitResult>>;
   pushBranch(input: PushBranchInput): Promise<GitAutomationResult<PushBranchResult>>;
   cleanupWorktree(

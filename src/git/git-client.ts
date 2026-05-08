@@ -12,8 +12,12 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  GetChangedFilesInput,
+  GetChangedFilesResult,
   GetDiffInput,
   GetDiffResult,
+  GetHeadInput,
+  GetHeadResult,
   GitAutomationError,
   GitAutomationResult,
   PushBranchInput,
@@ -115,6 +119,58 @@ export class LocalGitAutomationClient implements GitAutomationClient {
       value: {
         targetWorktreePath: input.targetWorktreePath,
         diff: result.value.stdout
+      }
+    };
+  }
+
+  async getHead(input: GetHeadInput): Promise<GitAutomationResult<GetHeadResult>> {
+    const validationError = validateTargetWorktreePath(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetWorktreePath,
+      "rev-parse",
+      "HEAD"
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetWorktreePath: input.targetWorktreePath,
+        head: result.value.stdout.trim()
+      }
+    };
+  }
+
+  async getChangedFiles(
+    input: GetChangedFilesInput
+  ): Promise<GitAutomationResult<GetChangedFilesResult>> {
+    const validationError = validateTargetWorktreePath(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetWorktreePath,
+      "status",
+      "--porcelain"
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetWorktreePath: input.targetWorktreePath,
+        files: parsePorcelainChangedFiles(result.value.stdout)
       }
     };
   }
@@ -466,6 +522,30 @@ function isKnownWorktreePath(
 
 function normalizePathForComparison(pathValue: string): string {
   return path.normalize(pathValue.trim()).replaceAll("\\", "/").toLowerCase();
+}
+
+function parsePorcelainChangedFiles(statusOutput: string): string[] {
+  return statusOutput
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line !== "")
+    .map((line) => parsePorcelainChangedFile(line))
+    .filter((file): file is string => file !== undefined);
+}
+
+function parsePorcelainChangedFile(line: string): string | undefined {
+  const status = line.slice(0, 2);
+  const pathText = line.slice(3).trim();
+  if (pathText === "") {
+    return undefined;
+  }
+
+  if (status.includes("R") || status.includes("C")) {
+    const renameDestination = pathText.split(" -> ").at(-1)?.trim();
+    return renameDestination === "" ? undefined : renameDestination;
+  }
+
+  return pathText;
 }
 
 function validateTargetWorktreePath(

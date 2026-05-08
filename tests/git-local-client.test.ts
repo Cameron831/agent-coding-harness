@@ -5,7 +5,9 @@ import {
   type CleanupWorktreeInput,
   type CommitInput,
   type CreateWorktreeInput,
+  type GetChangedFilesInput,
   type GetDiffInput,
+  type GetHeadInput,
   type GitCommandResult,
   type GitCommandRunner,
   type PushBranchInput,
@@ -172,6 +174,84 @@ test("LocalGitAutomationClient returns an empty diff when git stdout is empty", 
     value: {
       targetWorktreePath: validWorktreePath,
       diff: ""
+    }
+  });
+});
+
+test("LocalGitAutomationClient gets trimmed HEAD from the target worktree", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: "abc123\n",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getHead({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.deepEqual(runner.calls, [
+    ["-C", validWorktreePath, "rev-parse", "HEAD"]
+  ]);
+  assert.equal(runner.calls[0]?.includes(process.cwd()), false);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      head: "abc123"
+    }
+  });
+});
+
+test("LocalGitAutomationClient gets changed files from porcelain status output", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout:
+      " M src/index.ts\nA  tests/git-local-client.test.ts\n?? README.md\nR  src/old.ts -> src/new.ts\nC  src/source.ts -> src/copy.ts\n",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getChangedFiles({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.deepEqual(runner.calls, [
+    ["-C", validWorktreePath, "status", "--porcelain"]
+  ]);
+  assert.equal(runner.calls[0]?.includes(process.cwd()), false);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      files: [
+        "src/index.ts",
+        "tests/git-local-client.test.ts",
+        "README.md",
+        "src/new.ts",
+        "src/copy.ts"
+      ]
+    }
+  });
+});
+
+test("LocalGitAutomationClient returns an empty changed file list for clean status", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: "",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getChangedFiles({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      files: []
     }
   });
 });
@@ -549,6 +629,42 @@ test("LocalGitAutomationClient validates getDiff input before running git", asyn
   }
 });
 
+test("LocalGitAutomationClient validates getHead input before running git", async () => {
+  const cases: Array<[string, Partial<GetHeadInput>]> = [
+    ["missing targetWorktreePath", {}],
+    ["blank targetWorktreePath", { targetWorktreePath: " " }]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.getHead(input as GetHeadInput);
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
+test("LocalGitAutomationClient validates getChangedFiles input before running git", async () => {
+  const cases: Array<[string, Partial<GetChangedFilesInput>]> = [
+    ["missing targetWorktreePath", {}],
+    ["blank targetWorktreePath", { targetWorktreePath: " " }]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.getChangedFiles(input as GetChangedFilesInput);
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
 test("LocalGitAutomationClient validates commit input before running git", async () => {
   const cases: Array<[string, Partial<CommitInput>]> = [
     ["missing targetWorktreePath", { message: "Update files" }],
@@ -661,6 +777,48 @@ test("LocalGitAutomationClient returns getDiff non-zero git failures with the co
   if (!result.ok) {
     assert.equal(result.error.code, "unknown");
     assert.equal(result.error.message, "fatal: bad revision 'HEAD'");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
+test("LocalGitAutomationClient returns getHead non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 128,
+    stdout: "",
+    stderr: "fatal: ambiguous argument 'HEAD'\n"
+  };
+  const runner = new FakeGitCommandRunner(gitResult);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getHead({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: ambiguous argument 'HEAD'");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
+test("LocalGitAutomationClient returns getChangedFiles non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 128,
+    stdout: "",
+    stderr: "fatal: not a git repository\n"
+  };
+  const runner = new FakeGitCommandRunner(gitResult);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getChangedFiles({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: not a git repository");
     assert.equal(result.error.cause, gitResult);
   }
 });
@@ -813,6 +971,48 @@ test("LocalGitAutomationClient returns getDiff runner errors as git availability
   const client = new LocalGitAutomationClient(runner);
 
   const result = await client.getDiff({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unavailable");
+    assert.equal(result.error.message, "Failed to run git.");
+    assert.equal(result.error.cause, cause);
+  }
+});
+
+test("LocalGitAutomationClient returns getHead runner errors as git availability failures", async () => {
+  const cause = new Error("spawn git ENOENT");
+  const runner: GitCommandRunner = {
+    async run() {
+      throw cause;
+    }
+  };
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getHead({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unavailable");
+    assert.equal(result.error.message, "Failed to run git.");
+    assert.equal(result.error.cause, cause);
+  }
+});
+
+test("LocalGitAutomationClient returns getChangedFiles runner errors as git availability failures", async () => {
+  const cause = new Error("spawn git ENOENT");
+  const runner: GitCommandRunner = {
+    async run() {
+      throw cause;
+    }
+  };
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getChangedFiles({
     targetWorktreePath: validWorktreePath
   });
 
