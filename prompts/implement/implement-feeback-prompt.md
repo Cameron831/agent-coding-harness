@@ -75,8 +75,8 @@ The current `.runs/issue-<issue-number>/release.json` must remain valid JSON wit
 
 ```json
 {
-  "commitMessage": "Short imperative commit message",
-  "pullRequest": {
+  "commit_message": "Short imperative commit message",
+  "pull_request": {
     "title": "Short pull request title",
     "summary": "Concise pull request summary",
     "scope": [
@@ -91,18 +91,18 @@ The current `.runs/issue-<issue-number>/release.json` must remain valid JSON wit
 
 Required fields:
 
-- `commitMessage`: non-empty string
-- `pullRequest.title`: non-empty string
-- `pullRequest.summary`: non-empty string
-- `pullRequest.scope`: array of non-empty bullet-ready strings
-- `pullRequest.verification`: array of non-empty bullet-ready strings
+- `commit_message`: non-empty string
+- `pull_request.title`: non-empty string
+- `pull_request.summary`: non-empty string
+- `pull_request.scope`: array of non-empty bullet-ready strings
+- `pull_request.verification`: array of non-empty bullet-ready strings
 
 Update `release.json` when needed:
 
-- Update `pullRequest.scope` if the correction materially changes what changed.
-- Update `pullRequest.verification` with relevant rerun results or an applicable reason verification could not be run.
-- Update `pullRequest.summary` if the correction changes the implementation outcome.
-- Update `commitMessage` or `pullRequest.title` only if they are no longer accurate.
+- Update `pull_request.scope` if the correction materially changes what changed.
+- Update `pull_request.verification` with relevant rerun results or an applicable reason verification could not be run.
+- Update `pull_request.summary` if the correction changes the implementation outcome.
+- Update `commit_message` or `pull_request.title` only if they are no longer accurate.
 - Preserve existing accurate release JSON content.
 
 ## Default Behavior

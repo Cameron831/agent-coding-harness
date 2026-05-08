@@ -59,8 +59,8 @@ Artifacts:
 
 ```json
 {
-  "commitMessage": "Short imperative commit message",
-  "pullRequest": {
+  "commit_message": "Short imperative commit message",
+  "pull_request": {
     "title": "Short pull request title",
     "summary": "Concise pull request summary",
     "scope": [
@@ -75,11 +75,11 @@ Artifacts:
 
 Required fields:
 
-- `commitMessage`: non-empty string
-- `pullRequest.title`: non-empty string
-- `pullRequest.summary`: non-empty string
-- `pullRequest.scope`: array of non-empty bullet-ready strings
-- `pullRequest.verification`: array of non-empty bullet-ready strings
+- `commit_message`: non-empty string
+- `pull_request.title`: non-empty string
+- `pull_request.summary`: non-empty string
+- `pull_request.scope`: array of non-empty bullet-ready strings
+- `pull_request.verification`: array of non-empty bullet-ready strings
 
 Base the commit message and pull request fields on the injected issue details, planned scope, actual changes, and verification results.
 
@@ -93,7 +93,7 @@ On workflow start:
 4. Implement the planned code changes and tests.
 5. Run the planned verification when possible.
 6. Review the implementation output and verification results.
-7. Write `.runs/issue-<issue-number>/release.json` with `commitMessage` and the required `pullRequest` object.
+7. Write `.runs/issue-<issue-number>/release.json` with `commit_message` and the required `pull_request` object.
 
 ## Quality Bar
 
