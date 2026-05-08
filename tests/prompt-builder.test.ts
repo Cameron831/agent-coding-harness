@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -24,6 +31,9 @@ test("renderPreparePrompt defaults to the standard implement prompt", async () =
   assert.match(prompt, /Add prepare prompt builder/);
   assert.match(prompt, /Render implement prompts from issue details\./);
   assert.match(prompt, /Do not use subagents\./);
+  assert.match(prompt, /"commit_message"/);
+  assert.match(prompt, /"pull_request"/);
+  assert.doesNotMatch(prompt, /commitMessage|pullRequest/);
   assert.doesNotMatch(prompt, /\{\{number\}\}|\{\{title\}\}|\{\{body\}\}/);
 });
 
@@ -35,6 +45,28 @@ test("renderPreparePrompt selects the with-subagents implement prompt", async ()
 
   assert.match(prompt, /Use the `exec-planner` subagent/);
   assert.match(prompt, /Use the `executor` subagent/);
+  assert.match(prompt, /"commit_message"/);
+  assert.match(prompt, /"pull_request"/);
+  assert.doesNotMatch(prompt, /commitMessage|pullRequest/);
+});
+
+test("implement prompt templates request snake_case release metadata", async () => {
+  const promptFiles = [
+    "implement-prompt.md",
+    "implement-with-subagents-prompt.md",
+    "implement-feeback-prompt.md"
+  ];
+
+  for (const promptFile of promptFiles) {
+    const prompt = await readFile(
+      join("prompts", "implement", promptFile),
+      "utf8"
+    );
+
+    assert.match(prompt, /commit_message/);
+    assert.match(prompt, /pull_request/);
+    assert.doesNotMatch(prompt, /commitMessage|pullRequest/);
+  }
 });
 
 test("renderPreparePrompt replaces supported placeholders and leaves unsupported placeholders unchanged", async () => {
