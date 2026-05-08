@@ -23,6 +23,7 @@ export interface PrepareRunArtifact {
   issueNumber: number;
   worktreePath: string;
   branch: string;
+  beforeHead: string;
 }
 
 export interface WritePrepareArtifactsInput {
@@ -34,6 +35,7 @@ export interface WritePrepareArtifactsInput {
   prompt: string;
   worktreePath: string;
   branchName: string;
+  beforeHead: string;
   runsDirectory?: string;
 }
 
@@ -94,7 +96,8 @@ function buildRunArtifact(input: WritePrepareArtifactsInput): PrepareRunArtifact
     issueTitle: input.issue.title,
     issueNumber: input.issue.issueNumber,
     worktreePath: input.worktreePath,
-    branch: input.branchName
+    branch: input.branchName,
+    beforeHead: input.beforeHead
   };
 }
 
