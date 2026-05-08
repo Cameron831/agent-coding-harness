@@ -23,7 +23,8 @@ test("writePrepareArtifacts writes default artifacts under .runs issue directory
       issue: baseIssue,
       prompt: "Implement the approved plan exactly.",
       worktreePath: "C:/repos/worktrees/issue-42",
-      branchName: "42-add-prepare-artifact-writer"
+      branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
     });
 
     const expectedRunDirectory = path.join(".runs", "issue-42");
@@ -52,9 +53,19 @@ test("writePrepareArtifacts writes default artifacts under .runs issue directory
         issueTitle: "Add prepare artifact writer",
         issueNumber: 42,
         worktreePath: "C:/repos/worktrees/issue-42",
-        branch: "42-add-prepare-artifact-writer"
+        branch: "42-add-prepare-artifact-writer",
+        beforeHead: "abc123before"
       }
     );
+    assert.deepEqual(result.run, {
+      status: "prepared",
+      issueURL: "https://github.com/example/repo/issues/42",
+      issueTitle: "Add prepare artifact writer",
+      issueNumber: 42,
+      worktreePath: "C:/repos/worktrees/issue-42",
+      branch: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
+    });
   });
 });
 
@@ -65,6 +76,7 @@ test("writePrepareArtifacts writes artifacts under a custom runs directory", asy
       prompt: "custom prompt",
       worktreePath: "/worktrees/issue-42",
       branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before",
       runsDirectory: "custom-runs"
     });
 
@@ -83,6 +95,7 @@ test("writePrepareArtifacts creates nested run directories recursively", async (
       prompt: "prompt",
       worktreePath: "/worktrees/issue-42",
       branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before",
       runsDirectory: path.join("nested", "runs")
     });
 
@@ -98,7 +111,8 @@ test("writePrepareArtifacts preserves prompt content exactly", async () => {
       issue: baseIssue,
       prompt,
       worktreePath: "/worktrees/issue-42",
-      branchName: "42-add-prepare-artifact-writer"
+      branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
     });
 
     assert.equal(await readFile(path.join(root, result.promptPath), "utf8"), prompt);
@@ -111,7 +125,8 @@ test("writePrepareArtifacts formats JSON artifacts with two spaces and trailing 
       issue: baseIssue,
       prompt: "prompt",
       worktreePath: "/worktrees/issue-42",
-      branchName: "42-add-prepare-artifact-writer"
+      branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
     });
 
     assert.equal(
@@ -120,7 +135,7 @@ test("writePrepareArtifacts formats JSON artifacts with two spaces and trailing 
     );
     assert.equal(
       await readFile(path.join(root, result.runPath), "utf8"),
-      '{\n  "status": "prepared",\n  "issueURL": "https://github.com/example/repo/issues/42",\n  "issueTitle": "Add prepare artifact writer",\n  "issueNumber": 42,\n  "worktreePath": "/worktrees/issue-42",\n  "branch": "42-add-prepare-artifact-writer"\n}\n'
+      '{\n  "status": "prepared",\n  "issueURL": "https://github.com/example/repo/issues/42",\n  "issueTitle": "Add prepare artifact writer",\n  "issueNumber": 42,\n  "worktreePath": "/worktrees/issue-42",\n  "branch": "42-add-prepare-artifact-writer",\n  "beforeHead": "abc123before"\n}\n'
     );
   });
 });
@@ -131,7 +146,8 @@ test("writePrepareArtifacts initializes run status with approved spelling", asyn
       issue: baseIssue,
       prompt: "prompt",
       worktreePath: "/worktrees/issue-42",
-      branchName: "42-add-prepare-artifact-writer"
+      branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
     });
     const statuses: PrepareRunStatus[] = [
       "prepared",
@@ -153,7 +169,8 @@ test("writePrepareArtifacts falls back to empty issue body", async () => {
       issue: { ...baseIssue, body: undefined },
       prompt: "prompt",
       worktreePath: "/worktrees/issue-42",
-      branchName: "42-add-prepare-artifact-writer"
+      branchName: "42-add-prepare-artifact-writer",
+      beforeHead: "abc123before"
     });
 
     assert.deepEqual(result.issue, {
@@ -171,7 +188,8 @@ test("writePrepareArtifacts overwrites existing files deterministically", async 
       issue: baseIssue,
       prompt: "old prompt",
       worktreePath: "/old/worktree",
-      branchName: "old-branch"
+      branchName: "old-branch",
+      beforeHead: "oldhead"
     });
     await writeFile(path.join(runDirectory, "issue.json"), "stale issue", "utf8");
     await writeFile(path.join(runDirectory, "run.json"), "stale run", "utf8");
@@ -184,7 +202,8 @@ test("writePrepareArtifacts overwrites existing files deterministically", async 
       },
       prompt: "new prompt",
       worktreePath: "/new/worktree",
-      branchName: "new-branch"
+      branchName: "new-branch",
+      beforeHead: "newhead"
     });
 
     assert.equal(
@@ -197,7 +216,7 @@ test("writePrepareArtifacts overwrites existing files deterministically", async 
     );
     assert.equal(
       await readFile(path.join(runDirectory, "run.json"), "utf8"),
-      '{\n  "status": "prepared",\n  "issueURL": "https://github.com/example/repo/issues/42",\n  "issueTitle": "Updated title",\n  "issueNumber": 42,\n  "worktreePath": "/new/worktree",\n  "branch": "new-branch"\n}\n'
+      '{\n  "status": "prepared",\n  "issueURL": "https://github.com/example/repo/issues/42",\n  "issueTitle": "Updated title",\n  "issueNumber": 42,\n  "worktreePath": "/new/worktree",\n  "branch": "new-branch",\n  "beforeHead": "newhead"\n}\n'
     );
   });
 });

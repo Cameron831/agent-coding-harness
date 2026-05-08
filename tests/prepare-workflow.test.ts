@@ -4,8 +4,21 @@ import {
   runPrepareWorkflow,
   type AutomationResult,
   type CloseIssueInput,
+  type CleanupWorktreeInput,
+  type CleanupWorktreeResult,
+  type CommitInput,
+  type CommitResult,
   type CreateIssueInput,
   type CreatePullRequestInput,
+  type CreateWorktreeInput,
+  type GetChangedFilesInput,
+  type GetChangedFilesResult,
+  type GetDiffInput,
+  type GetDiffResult,
+  type GetHeadInput,
+  type GetHeadResult,
+  type GitAutomationClient,
+  type GitAutomationResult,
   type GitHubAutomationClient,
   type IssueDetails,
   type IssueIdentifier,
@@ -14,8 +27,13 @@ import {
   type PrepareIssueWorkspaceDependencies,
   type PrepareIssueWorkspaceInput,
   type PrepareIssueWorkspaceResult,
+  type PushBranchInput,
+  type PushBranchResult,
   type PullRequestDetails,
-  type RenderPreparePromptInput
+  type RenderPreparePromptInput,
+  type StageFilesInput,
+  type StageFilesResult,
+  type WorktreeDetails
 } from "../src/index.js";
 
 const repository = { owner: "owner", name: "name" };
@@ -68,6 +86,65 @@ class FakeGitHubClient implements GitHubAutomationClient {
   }
 }
 
+class FakeGitClient implements GitAutomationClient {
+  readonly getHeadInputs: GetHeadInput[] = [];
+
+  constructor(
+    private readonly getHeadResult: GitAutomationResult<GetHeadResult> = {
+      ok: true,
+      value: {
+        targetWorktreePath: "C:/repos/worktrees/issue-47",
+        head: "abc123before"
+      }
+    },
+    private readonly onGetHead?: () => void
+  ) {}
+
+  async createWorktree(
+    _input: CreateWorktreeInput
+  ): Promise<GitAutomationResult<WorktreeDetails>> {
+    throw new Error("createWorktree should not be called by prepare workflow tests.");
+  }
+
+  async stageFiles(
+    _input: StageFilesInput
+  ): Promise<GitAutomationResult<StageFilesResult>> {
+    throw new Error("stageFiles should not be called by prepare workflow tests.");
+  }
+
+  async getDiff(_input: GetDiffInput): Promise<GitAutomationResult<GetDiffResult>> {
+    throw new Error("getDiff should not be called by prepare workflow tests.");
+  }
+
+  async getHead(input: GetHeadInput): Promise<GitAutomationResult<GetHeadResult>> {
+    this.getHeadInputs.push(input);
+    this.onGetHead?.();
+    return this.getHeadResult;
+  }
+
+  async getChangedFiles(
+    _input: GetChangedFilesInput
+  ): Promise<GitAutomationResult<GetChangedFilesResult>> {
+    throw new Error("getChangedFiles should not be called by prepare workflow tests.");
+  }
+
+  async commit(_input: CommitInput): Promise<GitAutomationResult<CommitResult>> {
+    throw new Error("commit should not be called by prepare workflow tests.");
+  }
+
+  async pushBranch(
+    _input: PushBranchInput
+  ): Promise<GitAutomationResult<PushBranchResult>> {
+    throw new Error("pushBranch should not be called by prepare workflow tests.");
+  }
+
+  async cleanupWorktree(
+    _input: CleanupWorktreeInput
+  ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
+    throw new Error("cleanupWorktree should not be called by prepare workflow tests.");
+  }
+}
+
 test("prepare workflow fetches the issue before workspace prep, prompt rendering, and artifact writing", async () => {
   const events: string[] = [];
   const client = new FakeGitHubClient({
@@ -77,7 +154,7 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
   const prepareWorkspaceInputs: PrepareIssueWorkspaceInput[] = [];
   const renderPromptInputs: RenderPreparePromptInput[] = [];
   const writeArtifactInputs: PrepareArtifactWriterInput[] = [];
-  const gitClient = {};
+  const gitClient = new FakeGitClient(undefined, () => events.push("head"));
 
   const result = await runPrepareWorkflow(
     {
@@ -91,7 +168,7 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
     },
     {
       githubClient: client,
-      gitClient: gitClient as never,
+      gitClient,
       prepareWorkspace: async (
         input,
         dependencies?: PrepareIssueWorkspaceDependencies
@@ -121,13 +198,18 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
   );
 
   assert.equal(result.ok, true);
+  assert.deepEqual(gitClient.getHeadInputs, [
+    {
+      targetWorktreePath: "C:/repos/worktrees/issue-47"
+    }
+  ]);
   assert.deepEqual(client.getIssueInputs, [
     {
       repository,
       issueNumber: 47
     }
   ]);
-  assert.deepEqual(events, ["workspace", "prompt", "artifacts"]);
+  assert.deepEqual(events, ["workspace", "head", "prompt", "artifacts"]);
   assert.deepEqual(prepareWorkspaceInputs, [
     {
       issueNumber: fetchedIssue.issueNumber,
@@ -150,6 +232,7 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
       prompt: "rendered prompt",
       branchName: "47-add-prepare-workflow",
       worktreePath: "C:/repos/worktrees/issue-47",
+      beforeHead: "abc123before",
       runsDirectory: "custom-runs"
     }
   ]);
@@ -158,6 +241,7 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
 test("prepare workflow success exposes artifact paths, branch, and worktree path", async () => {
   const result = await runPrepareWorkflow(options, {
     githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient: new FakeGitClient(),
     prepareWorkspace: async () => ({
       ok: true,
       value: {
@@ -193,6 +277,7 @@ test("prepare workflow can create the GitHub client through dependency injection
       factoryCalls += 1;
       return client;
     },
+    gitClient: new FakeGitClient(),
     prepareWorkspace: async () => ({
       ok: true,
       value: {
@@ -245,6 +330,7 @@ test("prepare workflow stops when workspace prep fails", async () => {
 
   const result = await runPrepareWorkflow(options, {
     githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient: new FakeGitClient(),
     prepareWorkspace: async (): Promise<PrepareIssueWorkspaceResult> => ({
       ok: false,
       error: {
@@ -279,6 +365,7 @@ test("prepare workflow returns prompt rendering failures without writing artifac
 
   const result = await runPrepareWorkflow(options, {
     githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient: new FakeGitClient(),
     prepareWorkspace: async () => ({
       ok: true,
       value: {
@@ -304,6 +391,7 @@ test("prepare workflow returns prompt rendering failures without writing artifac
 test("prepare workflow returns artifact writing failures", async () => {
   const result = await runPrepareWorkflow(options, {
     githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient: new FakeGitClient(),
     prepareWorkspace: async () => ({
       ok: true,
       value: {
@@ -320,6 +408,83 @@ test("prepare workflow returns artifact writing failures", async () => {
   assert.equal(result.ok, false);
   assert.equal(result.ok || result.error.stage, "artifact_write");
   assert.equal(result.ok || result.error.message, "disk full");
+});
+
+test("prepare workflow returns getHead failures at workspace prep without rendering prompt or writing artifacts", async () => {
+  let promptRendered = false;
+  let artifactsWritten = false;
+  const gitClient = new FakeGitClient({
+    ok: false,
+    error: {
+      code: "unknown",
+      message: "cannot read head"
+    }
+  });
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient,
+    prepareWorkspace: async () => ({
+      ok: true,
+      value: {
+        branchName: "47-add-prepare-workflow",
+        targetWorktreePath: "C:/repos/worktrees/issue-47"
+      }
+    }),
+    renderPrompt: async () => {
+      promptRendered = true;
+      return "prompt";
+    },
+    writeArtifacts: async () => {
+      artifactsWritten = true;
+      return artifactResult();
+    }
+  });
+
+  assert.deepEqual(gitClient.getHeadInputs, [
+    {
+      targetWorktreePath: "C:/repos/worktrees/issue-47"
+    }
+  ]);
+  assert.deepEqual(result, {
+    ok: false,
+    error: {
+      stage: "workspace_prep",
+      code: "unknown",
+      message: "cannot read head"
+    }
+  });
+  assert.equal(promptRendered, false);
+  assert.equal(artifactsWritten, false);
+});
+
+test("prepare workflow returns thrown getHead errors at workspace prep", async () => {
+  const gitClient = new FakeGitClient();
+  gitClient.getHead = async () => {
+    throw new Error("head unavailable");
+  };
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient,
+    prepareWorkspace: async () => ({
+      ok: true,
+      value: {
+        branchName: "47-add-prepare-workflow",
+        targetWorktreePath: "C:/repos/worktrees/issue-47"
+      }
+    }),
+    renderPrompt: async () => {
+      throw new Error("prompt rendering should not be called.");
+    },
+    writeArtifacts: async () => {
+      throw new Error("artifact writing should not be called.");
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "workspace_prep");
+  assert.equal(result.ok || result.error.message, "head unavailable");
 });
 
 function artifactResult(): PrepareArtifactWriterResult {
@@ -339,7 +504,8 @@ function artifactResult(): PrepareArtifactWriterResult {
       issueTitle: "Add prepare workflow",
       issueNumber: 47,
       worktreePath: "C:/repos/worktrees/issue-47",
-      branch: "47-add-prepare-workflow"
+      branch: "47-add-prepare-workflow",
+      beforeHead: "abc123before"
     }
   };
 }

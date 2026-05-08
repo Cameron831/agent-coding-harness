@@ -1,5 +1,6 @@
 import { GhGitHubAutomationClient } from "../../github/gh-client.js";
 import type { GitHubAutomationClient } from "../../github/client.js";
+import { LocalGitAutomationClient } from "../../git/git-client.js";
 import type {
   AutomationErrorCode,
   GitHubAutomationError,
@@ -122,6 +123,7 @@ export async function runPrepareWorkflow(
   }
 
   const issue = issueResult.value;
+  const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
   const prepareWorkspace = dependencies.prepareWorkspace ?? prepareIssueWorkspace;
   let workspaceResult;
   try {
@@ -133,7 +135,7 @@ export async function runPrepareWorkflow(
         worktreeParentPath: options.worktreeParentPath,
         ...(settings.baseRef !== undefined ? { baseRef: settings.baseRef } : {})
       },
-      { gitClient: dependencies.gitClient }
+      { gitClient }
     );
   } catch (cause) {
     return failureFromThrown("workspace_prep", cause);
@@ -141,6 +143,19 @@ export async function runPrepareWorkflow(
 
   if (!workspaceResult.ok) {
     return failureFromAutomationError("workspace_prep", workspaceResult.error);
+  }
+
+  let headResult;
+  try {
+    headResult = await gitClient.getHead({
+      targetWorktreePath: workspaceResult.value.targetWorktreePath
+    });
+  } catch (cause) {
+    return failureFromThrown("workspace_prep", cause);
+  }
+
+  if (!headResult.ok) {
+    return failureFromAutomationError("workspace_prep", headResult.error);
   }
 
   const renderPrompt = dependencies.renderPrompt ?? renderPreparePrompt;
@@ -167,6 +182,7 @@ export async function runPrepareWorkflow(
       prompt,
       branchName: workspaceResult.value.branchName,
       worktreePath: workspaceResult.value.targetWorktreePath,
+      beforeHead: headResult.value.head,
       ...(settings.runsDirectory !== undefined
         ? { runsDirectory: settings.runsDirectory }
         : {})
