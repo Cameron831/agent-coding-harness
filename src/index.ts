@@ -29,10 +29,13 @@ export {
 } from "./workflow/implement/verification.js";
 export {
   buildImplementCodexConfig,
-  implementIssueWorkflow,
   implementReleaseOutputSchema,
   runImplementWorkflow
 } from "./workflow/implement/agent-orchestrator.js";
+export {
+  implementIssueWorkflow,
+  runImplementIssueWorkflow
+} from "./workflow/implement/implement.js";
 export {
   prepareIssueWorkflow,
   runPrepareWorkflow
@@ -111,6 +114,18 @@ export type {
   ImplementWorkflowResult,
   ImplementWorkflowSuccess
 } from "./workflow/implement/agent-orchestrator.js";
+export type {
+  ImplementAgentWorkflow,
+  ImplementArtifactWriter,
+  ImplementIssueWorkflowDependencies,
+  ImplementIssueWorkflowError,
+  ImplementIssueWorkflowFailureStage,
+  ImplementIssueWorkflowOptions,
+  ImplementIssueWorkflowResult,
+  ImplementIssueWorkflowSettings,
+  ImplementIssueWorkflowSuccess,
+  ImplementVerificationRunner
+} from "./workflow/implement/implement.js";
 export type {
   PrepareArtifactWriter,
   PreparePromptRenderer,
