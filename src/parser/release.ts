@@ -41,6 +41,14 @@ type ReleaseField =
   | "pull_request.scope"
   | "pull_request.verification";
 
+const releaseFields = ["commit_message", "pull_request"] as const;
+const pullRequestFields = [
+  "title",
+  "summary",
+  "scope",
+  "verification"
+] as const;
+
 export async function loadReleaseJson(
   path: string
 ): Promise<ReleaseJsonResult<ImplementorReleaseMetadata>> {
@@ -104,16 +112,23 @@ export function renderReleasePullRequestBody(
   ].join("\n");
 }
 
-function validateReleaseMetadata(
-  release: UnknownRecord
+export function validateReleaseMetadata(
+  release: unknown
 ): ReleaseJsonResult<ImplementorReleaseMetadata> {
+  if (!isRecord(release)) {
+    return failure({
+      message: "Release metadata must be a JSON object."
+    });
+  }
+
   const errors: ReleaseValidationError[] = [];
   const commitMessage = validateRequiredString(release, "commit_message");
   const pullRequest = validatePullRequest(release);
 
   collectErrors(errors, commitMessage, pullRequest);
+  collectAdditionalPropertyErrors(errors, release, releaseFields, "");
 
-  if (!commitMessage.ok || !pullRequest.ok) {
+  if (!commitMessage.ok || !pullRequest.ok || errors.length > 0) {
     return { ok: false, errors };
   }
 
@@ -148,8 +163,14 @@ function validatePullRequest(
   );
 
   collectErrors(errors, title, summary, scope, verification);
+  collectAdditionalPropertyErrors(
+    errors,
+    value,
+    pullRequestFields,
+    "pull_request."
+  );
 
-  if (!title.ok || !summary.ok || !scope.ok || !verification.ok) {
+  if (!title.ok || !summary.ok || !scope.ok || !verification.ok || errors.length > 0) {
     return { ok: false, errors };
   }
 
@@ -257,6 +278,25 @@ function fieldFailure<T>(
 
 function fieldKey(field: ReleaseField): string {
   return field.split(".").at(-1) ?? field;
+}
+
+function collectAdditionalPropertyErrors(
+  errors: ReleaseValidationError[],
+  record: UnknownRecord,
+  allowedFields: readonly string[],
+  fieldPrefix: string
+): void {
+  const allowed = new Set(allowedFields);
+
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) {
+      const field = `${fieldPrefix}${key}`;
+      errors.push({
+        field,
+        message: `Release metadata field ${field} is not allowed.`
+      });
+    }
+  }
 }
 
 function renderMarkdownList(items: readonly string[]): string {
