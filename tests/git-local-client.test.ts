@@ -5,6 +5,7 @@ import {
   type CleanupWorktreeInput,
   type CommitInput,
   type CreateWorktreeInput,
+  type GetDiffInput,
   type GitCommandResult,
   type GitCommandRunner,
   type PushBranchInput,
@@ -123,6 +124,54 @@ test("LocalGitAutomationClient stages only caller-provided files in the target w
     value: {
       targetWorktreePath: validWorktreePath,
       files: ["src/git/git-client.ts", "tests/git-local-client.test.ts"]
+    }
+  });
+});
+
+test("LocalGitAutomationClient gets raw diff output from the target worktree", async () => {
+  const diffOutput =
+    "diff --git a/src/index.ts b/src/index.ts\nindex abc123..def456 100644\n";
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: diffOutput,
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getDiff({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.deepEqual(runner.calls, [
+    ["-C", validWorktreePath, "diff", "HEAD", "--"]
+  ]);
+  assert.equal(runner.calls[0]?.includes(process.cwd()), false);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      diff: diffOutput
+    }
+  });
+});
+
+test("LocalGitAutomationClient returns an empty diff when git stdout is empty", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: "",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getDiff({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      diff: ""
     }
   });
 });
@@ -482,6 +531,24 @@ test("LocalGitAutomationClient validates stageFiles input before running git", a
   }
 });
 
+test("LocalGitAutomationClient validates getDiff input before running git", async () => {
+  const cases: Array<[string, Partial<GetDiffInput>]> = [
+    ["missing targetWorktreePath", {}],
+    ["blank targetWorktreePath", { targetWorktreePath: " " }]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.getDiff(input as GetDiffInput);
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
 test("LocalGitAutomationClient validates commit input before running git", async () => {
   const cases: Array<[string, Partial<CommitInput>]> = [
     ["missing targetWorktreePath", { message: "Update files" }],
@@ -573,6 +640,27 @@ test("LocalGitAutomationClient returns stageFiles non-zero git failures with the
   if (!result.ok) {
     assert.equal(result.error.code, "unknown");
     assert.equal(result.error.message, "fatal: pathspec did not match any files");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
+test("LocalGitAutomationClient returns getDiff non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 128,
+    stdout: "",
+    stderr: "fatal: bad revision 'HEAD'\n"
+  };
+  const runner = new FakeGitCommandRunner(gitResult);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getDiff({
+    targetWorktreePath: validWorktreePath
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: bad revision 'HEAD'");
     assert.equal(result.error.cause, gitResult);
   }
 });
@@ -706,6 +794,27 @@ test("LocalGitAutomationClient returns runner errors as git availability failure
   const client = new LocalGitAutomationClient(runner);
 
   const result = await client.createWorktree(validInput);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unavailable");
+    assert.equal(result.error.message, "Failed to run git.");
+    assert.equal(result.error.cause, cause);
+  }
+});
+
+test("LocalGitAutomationClient returns getDiff runner errors as git availability failures", async () => {
+  const cause = new Error("spawn git ENOENT");
+  const runner: GitCommandRunner = {
+    async run() {
+      throw cause;
+    }
+  };
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.getDiff({
+    targetWorktreePath: validWorktreePath
+  });
 
   assert.equal(result.ok, false);
   if (!result.ok) {

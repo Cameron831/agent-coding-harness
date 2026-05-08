@@ -111,6 +111,8 @@ export type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  GetDiffInput,
+  GetDiffResult,
   GitAutomationError,
   GitAutomationErrorCode,
   GitAutomationResult,
