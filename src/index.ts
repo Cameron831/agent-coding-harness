@@ -14,10 +14,17 @@ export {
   loadReleaseJson,
   parseReleaseJson,
   renderReleasePullRequestBody,
-  renderReleasePullRequestInput
+  renderReleasePullRequestInput,
+  validateReleaseMetadata
 } from "./parser/release.js";
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
+export {
+  buildImplementCodexConfig,
+  implementIssueWorkflow,
+  implementReleaseOutputSchema,
+  runImplementWorkflow
+} from "./workflow/implement.js";
 export {
   prepareIssueWorkflow,
   runPrepareWorkflow
@@ -58,6 +65,24 @@ export type {
   ReleasePullRequestWorkflowDependencies,
   ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+export type {
+  ImplementCodexClient,
+  ImplementCodexClientFactory,
+  ImplementCodexClientOptions,
+  ImplementCodexConfigObject,
+  ImplementCodexConfigValue,
+  ImplementCodexThread,
+  ImplementCodexThreadOptions,
+  ImplementCodexTurn,
+  ImplementCodexTurnOptions,
+  ImplementPromptLoader,
+  ImplementWorkflowDependencies,
+  ImplementWorkflowError,
+  ImplementWorkflowFailureStage,
+  ImplementWorkflowOptions,
+  ImplementWorkflowResult,
+  ImplementWorkflowSuccess
+} from "./workflow/implement.js";
 export type {
   PrepareArtifactWriter,
   PreparePromptRenderer,

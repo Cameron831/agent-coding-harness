@@ -54,10 +54,10 @@ Artifacts:
 ```
 
 ### Issue to release JSON
-1. Capture the approved issue context.
-2. exec-planner produces `execution-plan.md`.
-3. executor implements the approved code and tests.
-4. implementor verifies the result and produces `release.json`.
+1. Prepare the issue worktree and prompt from the approved issue context.
+2. Run Codex in the target worktree with the prepared prompt.
+3. Validate Codex final output as snake_case release metadata JSON.
+4. A future artifact writer or release PR sequence can persist or publish the validated metadata.
 
 Artifacts:
 ```text
