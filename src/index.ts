@@ -24,11 +24,11 @@ export {
   implementIssueWorkflow,
   implementReleaseOutputSchema,
   runImplementWorkflow
-} from "./workflow/implement.js";
+} from "./workflow/implement/agent-orchestrator.js";
 export {
   prepareIssueWorkflow,
   runPrepareWorkflow
-} from "./workflow/prepare.js";
+} from "./workflow/prepare/prepare.js";
 export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
 export {
   buildPreparePrompt,
@@ -82,7 +82,7 @@ export type {
   ImplementWorkflowOptions,
   ImplementWorkflowResult,
   ImplementWorkflowSuccess
-} from "./workflow/implement.js";
+} from "./workflow/implement/agent-orchestrator.js";
 export type {
   PrepareArtifactWriter,
   PreparePromptRenderer,
@@ -94,7 +94,7 @@ export type {
   PrepareWorkflowSettings,
   PrepareWorkflowSuccess,
   PrepareWorkspaceFunction
-} from "./workflow/prepare.js";
+} from "./workflow/prepare/prepare.js";
 export type {
   PrepareArtifactWriterInput,
   PrepareArtifactWriterResult,

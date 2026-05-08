@@ -1,29 +1,29 @@
-import { GhGitHubAutomationClient } from "../github/gh-client.js";
-import type { GitHubAutomationClient } from "../github/client.js";
+import { GhGitHubAutomationClient } from "../../github/gh-client.js";
+import type { GitHubAutomationClient } from "../../github/client.js";
 import type {
   AutomationErrorCode,
   GitHubAutomationError,
   IssueDetails,
   RepositorySelection
-} from "../github/types.js";
-import type { GitAutomationClient } from "../git/client.js";
-import type { GitAutomationError } from "../git/types.js";
+} from "../../github/types.js";
+import type { GitAutomationClient } from "../../git/client.js";
+import type { GitAutomationError } from "../../git/types.js";
 import {
   type PrepareArtifactWriterInput,
   type PrepareArtifactWriterResult,
   writePrepareArtifacts
-} from "./prepare/artifact-writer.js";
+} from "./artifact-writer.js";
 import {
   renderPreparePrompt,
   type PreparePromptVariant,
   type RenderPreparePromptInput
-} from "./prepare/prompt-builder.js";
+} from "./prompt-builder.js";
 import {
   prepareIssueWorkspace,
   type PrepareIssueWorkspaceDependencies,
   type PrepareIssueWorkspaceInput,
   type PrepareIssueWorkspaceResult
-} from "./prepare/workspace-prep.js";
+} from "./workspace-prep.js";
 
 export interface PrepareWorkflowSettings {
   baseRef?: string;

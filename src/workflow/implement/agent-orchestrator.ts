@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import type {
   ImplementorReleaseMetadata,
   ReleaseValidationError
-} from "../parser/release.js";
-import { validateReleaseMetadata } from "../parser/release.js";
+} from "../../parser/release.js";
+import { validateReleaseMetadata } from "../../parser/release.js";
 
 export interface ImplementWorkflowOptions {
   promptPath: string;
