@@ -23,6 +23,11 @@ export {
   writeImplementArtifacts
 } from "./workflow/implement/artifact-writer.js";
 export {
+  LocalImplementVerificationCommandRunner,
+  renderImplementVerificationReport,
+  runImplementVerification
+} from "./workflow/implement/verification.js";
+export {
   buildImplementCodexConfig,
   implementIssueWorkflow,
   implementReleaseOutputSchema,
@@ -77,6 +82,17 @@ export type {
   WriteImplementArtifactsInput,
   WriteImplementArtifactsResult
 } from "./workflow/implement/artifact-writer.js";
+export type {
+  ImplementVerificationCheckResult,
+  ImplementVerificationClock,
+  ImplementVerificationCommandInput,
+  ImplementVerificationCommandResult,
+  ImplementVerificationCommandRunner,
+  ImplementVerificationDependencies,
+  ImplementVerificationInput,
+  ImplementVerificationResult,
+  ImplementVerificationStatus
+} from "./workflow/implement/verification.js";
 export type {
   ImplementCodexClient,
   ImplementCodexClientFactory,
