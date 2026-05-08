@@ -12,6 +12,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  GetDiffInput,
+  GetDiffResult,
   GitAutomationError,
   GitAutomationResult,
   PushBranchInput,
@@ -87,6 +89,32 @@ export class LocalGitAutomationClient implements GitAutomationClient {
       value: {
         targetWorktreePath: input.targetWorktreePath,
         files: input.files
+      }
+    };
+  }
+
+  async getDiff(input: GetDiffInput): Promise<GitAutomationResult<GetDiffResult>> {
+    const validationError = validateTargetWorktreePath(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetWorktreePath,
+      "diff",
+      "HEAD",
+      "--"
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetWorktreePath: input.targetWorktreePath,
+        diff: result.value.stdout
       }
     };
   }

@@ -7,6 +7,8 @@ import {
   type CommitInput,
   type CommitResult,
   type CreateWorktreeInput,
+  type GetDiffInput,
+  type GetDiffResult,
   type GitAutomationClient,
   type GitAutomationResult,
   type PushBranchInput,
@@ -48,6 +50,12 @@ class FakeGitAutomationClient implements GitAutomationClient {
     _input: StageFilesInput
   ): Promise<GitAutomationResult<StageFilesResult>> {
     throw new Error("stageFiles should not be called by workspace prep tests.");
+  }
+
+  async getDiff(
+    _input: GetDiffInput
+  ): Promise<GitAutomationResult<GetDiffResult>> {
+    throw new Error("getDiff should not be called by workspace prep tests.");
   }
 
   async commit(_input: CommitInput): Promise<GitAutomationResult<CommitResult>> {

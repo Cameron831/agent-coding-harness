@@ -42,6 +42,12 @@ export interface StageFilesResult extends TargetWorktreePath {
   files: string[];
 }
 
+export interface GetDiffInput extends TargetWorktreePath {}
+
+export interface GetDiffResult extends TargetWorktreePath {
+  diff: string;
+}
+
 export interface CommitInput extends TargetWorktreePath {
   message: string;
 }

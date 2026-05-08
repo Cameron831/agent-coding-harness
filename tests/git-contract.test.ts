@@ -4,6 +4,7 @@ import type {
   AutomationResult,
   CleanupWorktreeResult,
   CommitResult,
+  GetDiffResult,
   GitAutomationClient,
   GitCommandResult,
   GitCommandRunner,
@@ -32,6 +33,12 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
       return ok<StageFilesResult>({
         targetWorktreePath: input.targetWorktreePath,
         files: input.files
+      });
+    },
+    async getDiff(input) {
+      return ok<GetDiffResult>({
+        targetWorktreePath: input.targetWorktreePath,
+        diff: "diff --git a/src/index.ts b/src/index.ts\n"
       });
     },
     async commit(input) {
@@ -68,6 +75,9 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     targetWorktreePath,
     files: ["src/git/types.ts", "src/git/client.ts"]
   });
+  const diff = await fakeClient.getDiff({
+    targetWorktreePath
+  });
   const commit = await fakeClient.commit({
     targetWorktreePath,
     message: "Add Git automation contract"
@@ -86,6 +96,7 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
 
   assert.equal(worktree.ok && worktree.value.targetRepositoryPath, targetRepositoryPath);
   assert.equal(staged.ok && staged.value.files.length, 2);
+  assert.equal(diff.ok && diff.value.diff, "diff --git a/src/index.ts b/src/index.ts\n");
   assert.equal(commit.ok && commit.value.commitSha, "abc123");
   assert.equal(push.ok && push.value.remoteName, "origin");
   assert.equal(cleanup.ok && cleanup.value.removed, true);
