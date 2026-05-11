@@ -40,6 +40,13 @@ export {
   prepareIssueWorkflow,
   runPrepareWorkflow
 } from "./workflow/prepare/prepare.js";
+export {
+  formatPrepareSuccess,
+  formatPrepareUsage,
+  parsePrepareCliArgs,
+  parsePrepareRepository,
+  runPrepareCli
+} from "./workflow/prepare/cli-prepare.js";
 export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
 export {
   buildPreparePrompt,
@@ -138,6 +145,12 @@ export type {
   PrepareWorkflowSuccess,
   PrepareWorkspaceFunction
 } from "./workflow/prepare/prepare.js";
+export type {
+  PrepareCliOptions,
+  PrepareCliParseResult,
+  PrepareWorkflowRunner,
+  RunPrepareCliOptions
+} from "./workflow/prepare/cli-prepare.js";
 export type {
   PrepareArtifactWriterInput,
   PrepareArtifactWriterResult,
