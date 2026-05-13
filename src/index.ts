@@ -32,6 +32,13 @@ export {
   runReleasePublishWorkflow
 } from "./workflow/release/publish.js";
 export {
+  formatReleaseSuccess,
+  formatReleaseUsage,
+  parseReleaseCliArgs,
+  parseReleaseRepository,
+  runReleaseCli
+} from "./workflow/release/cli-release.js";
+export {
   LocalImplementVerificationCommandRunner,
   renderImplementVerificationReport,
   runImplementVerification
@@ -120,6 +127,12 @@ export type {
   ReleasePublishWorkflowResult,
   ReleasePublishWorkflowSuccess
 } from "./workflow/release/publish.js";
+export type {
+  ReleaseCliOptions,
+  ReleaseCliParseResult,
+  ReleaseWorkflowRunner,
+  RunReleaseCliOptions
+} from "./workflow/release/cli-release.js";
 export type {
   ImplementVerificationCheckResult,
   ImplementVerificationClock,
