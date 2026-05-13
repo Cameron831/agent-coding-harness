@@ -23,6 +23,11 @@ export {
   writeImplementArtifacts
 } from "./workflow/implement/artifact-writer.js";
 export {
+  loadReleaseRunArtifact,
+  writeReleasePublishedRunArtifact,
+  writeReleasePublishingRunArtifact
+} from "./workflow/release/artifact-writer.js";
+export {
   LocalImplementVerificationCommandRunner,
   renderImplementVerificationReport,
   runImplementVerification
