@@ -9,6 +9,10 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "workflow": "node dist/src/cli.js",
+    "workflow:prepare": "node dist/src/cli.js prepare",
+    "workflow:implement": "node dist/src/cli.js implement",
+    "workflow:release": "node dist/src/cli.js release",
     "plan:issues": "node dist/src/cli.js",
     "release:pr": "node dist/src/cli.js"
   },
