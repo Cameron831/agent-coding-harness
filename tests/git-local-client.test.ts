@@ -363,6 +363,7 @@ test("LocalGitAutomationClient removes a clean associated worktree from the targ
       stderr: ""
     },
     { exitCode: 0, stdout: "", stderr: "" },
+    { exitCode: 0, stdout: "", stderr: "" },
     { exitCode: 0, stdout: "", stderr: "" }
   ]);
   const client = new LocalGitAutomationClient(runner);
@@ -378,6 +379,7 @@ test("LocalGitAutomationClient removes a clean associated worktree from the targ
       "--porcelain"
     ],
     ["-C", "C:/repos/worktrees/issue-23", "status", "--porcelain"],
+    ["-C", "C:/repos/worktrees/issue-23", "clean", "-fdX"],
     [
       "-C",
       "C:/repos/target",
@@ -403,6 +405,7 @@ test("LocalGitAutomationClient includes force only for explicit force cleanup", 
       stderr: ""
     },
     { exitCode: 0, stdout: " M src/index.ts\n", stderr: "" },
+    { exitCode: 0, stdout: "", stderr: "" },
     { exitCode: 0, stdout: "", stderr: "" }
   ]);
   const client = new LocalGitAutomationClient(runner);
@@ -412,13 +415,24 @@ test("LocalGitAutomationClient includes force only for explicit force cleanup", 
     force: true
   });
 
-  assert.deepEqual(runner.calls[2], [
-    "-C",
-    "C:/repos/target",
-    "worktree",
-    "remove",
-    "--force",
-    "C:/repos/worktrees/issue-23"
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "worktree",
+      "list",
+      "--porcelain"
+    ],
+    ["-C", "C:/repos/worktrees/issue-23", "status", "--porcelain"],
+    ["-C", "C:/repos/worktrees/issue-23", "clean", "-fdX"],
+    [
+      "-C",
+      "C:/repos/target",
+      "worktree",
+      "remove",
+      "--force",
+      "C:/repos/worktrees/issue-23"
+    ]
   ]);
   assert.deepEqual(result, {
     ok: true,
@@ -912,6 +926,44 @@ test("LocalGitAutomationClient returns cleanup status git failures with the comm
   }
 });
 
+test("LocalGitAutomationClient returns cleanup clean git failures before removal", async () => {
+  const gitResult = {
+    exitCode: 1,
+    stdout: "",
+    stderr: "fatal: clean failed\n"
+  };
+  const runner = new FakeGitCommandRunner([
+    {
+      exitCode: 0,
+      stdout: "worktree C:/repos/worktrees/issue-23\nHEAD def456\n",
+      stderr: ""
+    },
+    { exitCode: 0, stdout: "", stderr: "" },
+    gitResult
+  ]);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.cleanupWorktree(validCleanupInput);
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "worktree",
+      "list",
+      "--porcelain"
+    ],
+    ["-C", "C:/repos/worktrees/issue-23", "status", "--porcelain"],
+    ["-C", "C:/repos/worktrees/issue-23", "clean", "-fdX"]
+  ]);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: clean failed");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
 test("LocalGitAutomationClient returns cleanup remove git failures with the command result as cause", async () => {
   const gitResult = {
     exitCode: 255,
@@ -924,6 +976,7 @@ test("LocalGitAutomationClient returns cleanup remove git failures with the comm
       stdout: "worktree C:/repos/worktrees/issue-23\nHEAD def456\n",
       stderr: ""
     },
+    { exitCode: 0, stdout: "", stderr: "" },
     { exitCode: 0, stdout: "", stderr: "" },
     gitResult
   ]);

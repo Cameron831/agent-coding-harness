@@ -290,6 +290,16 @@ export class LocalGitAutomationClient implements GitAutomationClient {
       });
     }
 
+    const cleanResult = await this.runCommand([
+      "-C",
+      input.targetWorktreePath,
+      "clean",
+      "-fdX"
+    ]);
+    if (!cleanResult.ok) {
+      return cleanResult;
+    }
+
     const removeArgs = [
       "-C",
       input.targetRepositoryPath,
