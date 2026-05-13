@@ -23,6 +23,9 @@ import {
   type BranchResolutionResult,
   type ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+import { runImplementCli as runImplementWorkflowLocalCli } from "./workflow/implement/cli-implement.js";
+import { runPrepareCli as runPrepareWorkflowLocalCli } from "./workflow/prepare/cli-prepare.js";
+import { runReleaseCli as runReleaseWorkflowLocalCli } from "./workflow/release/cli-release.js";
 
 export interface PlannerIssueCliOptions {
   planPath: string;
@@ -33,6 +36,14 @@ export interface PlannerIssueCliOptions {
 export type ReleasePullRequestCliOptions = ReleasePullRequestWorkflowOptions;
 
 export type CliOptions = PlannerIssueCliOptions | ReleasePullRequestCliOptions;
+
+export type WorkflowLocalCliRunner = (
+  args: readonly string[],
+  options?: {
+    stdout?: (message: string) => void;
+    stderr?: (message: string) => void;
+  }
+) => Promise<number>;
 
 export type CliParseResult =
   | {
@@ -57,20 +68,33 @@ export interface RunCliOptions {
   gitRunner?: GitCommandRunner;
   githubClient?: GitHubAutomationClient;
   createGitHubClient?: () => GitHubAutomationClient;
+  runPrepareCli?: WorkflowLocalCliRunner;
+  runImplementCli?: WorkflowLocalCliRunner;
+  runReleaseCli?: WorkflowLocalCliRunner;
 }
 
 export function formatUsage(): string {
   return [
     "Usage:",
+    "  agent-workforce prepare [prepare options]",
+    "  agent-workforce implement [implement options]",
+    "  agent-workforce release [release publish options]",
+    "  agent-workforce --plan <path> [--repo owner/name] [--dry-run]",
+    "  agent-workforce --release <path> [--repo owner/name] [--base branch] [--head branch] [--dry-run]",
     "  agent-workforce-plan-issues --plan <path> [--repo owner/name] [--dry-run]",
     "  agent-workforce-release-pr --release <path> [--repo owner/name] [--base branch] [--head branch] [--dry-run]",
     "",
-    "Options:",
-    "  --plan <path>       Path to a planner plan.json artifact.",
-    "  --release <path>    Path to an implementor release.json artifact.",
+    "Commands:",
+    "  prepare            Run the staged prepare workflow.",
+    "  implement          Run the staged implement workflow.",
+    "  release            Publish the staged release workflow.",
+    "",
+    "Legacy root modes:",
+    "  --plan <path>       Create issues from a planner plan.json artifact.",
+    "  --release <path>    Create a manual PR from release.json; distinct from the release publish subcommand.",
     "  --repo owner/name   Optional GitHub repository context.",
-    "  --base branch       Pull request base branch. Defaults to main.",
-    "  --head branch       Pull request head branch. Defaults to the current branch.",
+    "  --base branch       Manual PR base branch. Defaults to main.",
+    "  --head branch       Manual PR head branch. Defaults to the current branch.",
     "  --dry-run           Print a preview without creating GitHub resources."
   ].join("\n");
 }
@@ -224,6 +248,29 @@ export async function runCli(
   const stderr = options.stderr ?? console.error;
   const loadPlan = options.loadPlan ?? loadPlannerPlan;
   const loadRelease = options.loadRelease ?? loadReleaseJson;
+
+  const [command, ...commandArgs] = args;
+  if (command === "prepare") {
+    return (options.runPrepareCli ?? runPrepareWorkflowLocalCli)(commandArgs, {
+      stdout,
+      stderr
+    });
+  }
+
+  if (command === "implement") {
+    return (options.runImplementCli ?? runImplementWorkflowLocalCli)(commandArgs, {
+      stdout,
+      stderr
+    });
+  }
+
+  if (command === "release") {
+    return (options.runReleaseCli ?? runReleaseWorkflowLocalCli)(commandArgs, {
+      stdout,
+      stderr
+    });
+  }
+
   const parsed = parseCliArgs(args);
 
   if (!parsed.ok) {

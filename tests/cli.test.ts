@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parseCliArgs, parseRepository, runCli } from "../src/cli.js";
+import { formatUsage, parseCliArgs, parseRepository, runCli } from "../src/cli.js";
 import type {
   AutomationResult,
   CloseIssueInput,
@@ -105,6 +105,129 @@ class FakeGitHubClient implements GitHubAutomationClient {
 }
 
 type ManualPrRunCliOptions = NonNullable<Parameters<typeof runCli>[1]>;
+
+test("routes prepare subcommand to injected runner with forwarded argv", async () => {
+  let capturedArgs: readonly string[] | undefined;
+  let capturedStdout: unknown;
+  let capturedStderr: unknown;
+  const stdout = () => undefined;
+  const stderr = () => undefined;
+
+  const exitCode = await runCli(
+    ["prepare", "--issue", "77", "--target-repo", "repo"],
+    {
+      stdout,
+      stderr,
+      runPrepareCli: async (args, options) => {
+        capturedArgs = args;
+        capturedStdout = options?.stdout;
+        capturedStderr = options?.stderr;
+        return 17;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 17);
+  assert.deepEqual(capturedArgs, ["--issue", "77", "--target-repo", "repo"]);
+  assert.equal(capturedStdout, stdout);
+  assert.equal(capturedStderr, stderr);
+});
+
+test("routes implement subcommand to injected runner with forwarded argv", async () => {
+  let capturedArgs: readonly string[] | undefined;
+
+  const exitCode = await runCli(
+    ["implement", "--issue", "77", "--prompt", "prompt.md"],
+    {
+      runImplementCli: async (args) => {
+        capturedArgs = args;
+        return 23;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 23);
+  assert.deepEqual(capturedArgs, ["--issue", "77", "--prompt", "prompt.md"]);
+});
+
+test("routes release subcommand to injected runner with forwarded argv", async () => {
+  let capturedArgs: readonly string[] | undefined;
+
+  const exitCode = await runCli(
+    ["release", "--release", "release.json", "--branch", "issue-77"],
+    {
+      runReleaseCli: async (args) => {
+        capturedArgs = args;
+        return 31;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 31);
+  assert.deepEqual(capturedArgs, [
+    "--release",
+    "release.json",
+    "--branch",
+    "issue-77"
+  ]);
+});
+
+test("unknown subcommands and missing arguments return top-level usage", async () => {
+  const unknownStderr: string[] = [];
+  const missingStderr: string[] = [];
+
+  const unknownExitCode = await runCli(["deploy"], {
+    stderr: (message) => unknownStderr.push(message)
+  });
+  const missingExitCode = await runCli([], {
+    stderr: (message) => missingStderr.push(message)
+  });
+
+  assert.equal(unknownExitCode, 1);
+  assert.match(unknownStderr.join("\n"), /Unexpected positional argument: deploy/);
+  assert.match(unknownStderr.join("\n"), /agent-workforce prepare/);
+  assert.match(unknownStderr.join("\n"), /agent-workforce release/);
+
+  assert.equal(missingExitCode, 1);
+  assert.match(missingStderr.join("\n"), /--plan is required/);
+  assert.match(missingStderr.join("\n"), /agent-workforce implement/);
+});
+
+test("top-level usage lists staged commands without workflow-local options", () => {
+  const usage = formatUsage();
+
+  assert.match(usage, /agent-workforce prepare \[prepare options\]/);
+  assert.match(usage, /agent-workforce implement \[implement options\]/);
+  assert.match(usage, /agent-workforce release \[release publish options\]/);
+  assert.match(usage, /manual PR from release\.json/);
+  assert.doesNotMatch(usage, /--target-repo/);
+  assert.doesNotMatch(usage, /--worktree-parent/);
+});
+
+test("package scripts expose top-level staged workflow commands", async () => {
+  const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+    scripts: Record<string, string>;
+  };
+
+  assert.equal(packageJson.scripts.workflow, "node dist/src/cli.js");
+  assert.equal(packageJson.scripts["workflow:prepare"], "node dist/src/cli.js prepare");
+  assert.equal(
+    packageJson.scripts["workflow:implement"],
+    "node dist/src/cli.js implement"
+  );
+  assert.equal(packageJson.scripts["workflow:release"], "node dist/src/cli.js release");
+  assert.equal(packageJson.scripts["plan:issues"], "node dist/src/cli.js");
+  assert.equal(packageJson.scripts["release:pr"], "node dist/src/cli.js");
+});
+
+test("README documents top-level staged commands and qualifies legacy release mode", async () => {
+  const readme = await readFile("README.md", "utf8");
+
+  assert.match(readme, /npm run workflow -- prepare /);
+  assert.match(readme, /npm run workflow -- implement /);
+  assert.match(readme, /npm run workflow -- release /);
+  assert.match(readme, /legacy manual PR mode/);
+});
 
 function successfulIssue(
   issueNumber: number,

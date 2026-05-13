@@ -57,7 +57,7 @@ Artifacts:
 1. Prepare the issue worktree and prompt from the approved issue context.
 2. Run Codex in the target worktree with the prepared prompt.
 3. Validate Codex final output as snake_case release metadata JSON.
-4. A future artifact writer or release PR sequence can persist or publish the validated metadata.
+4. Publish the release by committing, pushing, opening the pull request, and cleaning up the prepared worktree.
 
 Artifacts:
 ```text
@@ -66,6 +66,33 @@ Artifacts:
     release.json
 ```
 
+## Staged workflow commands
+Build the project first:
+
+```powershell
+npm run build
+```
+
+Prepare an issue worktree and implementation prompt:
+
+```powershell
+npm run workflow -- prepare --issue <issue-number> --target-repo <target-repo-path> --worktree-parent <worktrees-parent-path> --repo owner/name
+```
+
+Run implementation against the prepared worktree:
+
+```powershell
+npm run workflow -- implement --issue <issue-number> --prompt .runs/issue-<issue-number>/prompt.md --worktree <worktree-path> --before-head <sha>
+```
+
+Publish the staged release workflow:
+
+```powershell
+npm run workflow -- release --release .runs/issue-<issue-number>/release.json --target-repo <target-repo-path> --worktree <worktree-path> --branch <branch-name> --base main --repo owner/name
+```
+
+The top-level `prepare`, `implement`, and `release` subcommands delegate to the workflow-local CLIs. Use those workflow-local usage messages as the source of truth for stage-specific options. The `release` subcommand is the publish workflow; root `--release` remains the legacy manual PR mode described below.
+
 ## Handoff files
 - Feature spec
 - JSON issue plan
@@ -73,19 +100,21 @@ Artifacts:
 - QA review
 - Release JSON
 
-## Planner issue creation
+## Planner issue creation legacy root mode
 Build the project, then preview the GitHub issues that would be created from a planner `plan.json` artifact:
 
 ```powershell
 npm run build
-npm run plan:issues -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name --dry-run
+npm run workflow -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name --dry-run
 ```
 
 To create the issues in GitHub, omit `--dry-run`:
 
 ```powershell
-npm run plan:issues -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name
+npm run workflow -- --plan .artifacts/planner/<feature-slug>/plan.json --repo owner/name
 ```
+
+The existing `npm run plan:issues -- --plan ...` script remains available for compatibility.
 
 Live creation uses the local GitHub CLI authentication through the repository automation client. Before running it, install `gh`, authenticate with `gh auth login`, and make sure the authenticated account can create issues in the target repository. If `--repo` is omitted, the GitHub CLI repository context is used.
 
@@ -93,19 +122,21 @@ The command validates the full plan before creating the first issue. Creation is
 
 Re-running live creation can create duplicate GitHub issues. Use `--dry-run` first and only run live mode once for a given approved plan unless duplicates are intended.
 
-## Release pull request creation
-Build the project, then preview the pull request that would be created from an implementor `release.json` artifact:
+## Release pull request creation legacy root mode
+Build the project, then preview the manual pull request that would be created from an implementor `release.json` artifact:
 
 ```powershell
 npm run build
-npm run release:pr -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name --dry-run
+npm run workflow -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name --dry-run
 ```
 
 To create the pull request in GitHub, omit `--dry-run`:
 
 ```powershell
-npm run release:pr -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name
+npm run workflow -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name
 ```
+
+The existing `npm run release:pr -- --release ...` script remains available for compatibility. This legacy manual PR mode is separate from `npm run workflow -- release`, which runs the staged release publish workflow.
 
 The command validates release metadata with the implementor release parser and renders the pull request title and body from that artifact. If `--base` is omitted, the base branch defaults to `main`. If `--head` is omitted, the command resolves the current git branch; provide `--head <branch>` explicitly when running from a detached HEAD or another context where git cannot report the current branch. If `--repo` is omitted, the GitHub CLI repository context is used.
 
