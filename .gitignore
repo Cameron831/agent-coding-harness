@@ -2,5 +2,7 @@
 .env
 .env.*
 .artifacts
+.npm-cache/
 dist/
 node_modules/
+.runs/
