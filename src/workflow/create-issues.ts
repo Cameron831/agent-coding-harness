@@ -72,7 +72,7 @@ async function createPlannerIssues(
   const createdIssues: IssueDetails[] = [];
 
   for (const [index, issue] of issues.entries()) {
-    const input = toCreateIssueInput(issue, repository);
+    const input = toCreateIssueInput(issue, index, repository);
     const result = await client.createIssue(input);
 
     if (!result.ok) {
@@ -96,9 +96,10 @@ async function createPlannerIssues(
 
 function toCreateIssueInput(
   issue: PlannerPlanIssueInput,
+  planIndex: number,
   repository: RepositorySelection | undefined
 ): CreateIssueInput {
-  const rendered = renderPlannerIssueInput(issue);
+  const rendered = renderPlannerIssueInput(issue, { planIndex });
   return {
     repository,
     title: rendered.title,
@@ -119,7 +120,7 @@ function formatDryRunOutput(
   }
 
   issues.forEach((issue, index) => {
-    const rendered = renderPlannerIssueInput(issue);
+    const rendered = renderPlannerIssueInput(issue, { planIndex: index });
     lines.push("", `Issue ${index + 1}: ${rendered.title}`, "", rendered.body);
   });
 

@@ -5,8 +5,10 @@ export { GhGitHubAutomationClient } from "./github/gh-client.js";
 export { LocalGhCommandRunner } from "./github/gh-runner.js";
 export { LocalGitCommandRunner } from "./git/git-runner.js";
 export {
+  generatePlannerIssueIdempotencyKey,
   loadPlannerPlan,
   parsePlannerPlanJson,
+  renderPlannerIssueIdempotencyMarker,
   renderPlannerIssueBody,
   renderPlannerIssueInput
 } from "./parser/plan.js";
@@ -84,6 +86,7 @@ export type {
   GitCommandRunner
 } from "./git/git-runner.js";
 export type {
+  PlannerIssueRenderOptions,
   PlannerPlanIssueInput,
   PlannerPlanResult,
   PlannerPlanValidationError,

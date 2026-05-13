@@ -1,0 +1,15 @@
+{
+  "commit_message": "Add planner issue idempotency markers",
+  "pull_request": {
+    "title": "Add planner issue idempotency markers",
+    "summary": "Adds deterministic planner issue idempotency keys and renders them as low-noise HTML comments in planner-created GitHub issue bodies.",
+    "scope": [
+      "Added SHA-256 based planner issue idempotency key generation from issue content and plan index",
+      "Rendered marker-aware planner issue bodies for dry-run output and live GitHub issue creation",
+      "Covered key stability, content-sensitive key changes, per-index differences, and marker inclusion with focused tests"
+    ],
+    "verification": [
+      "npm test passed"
+    ]
+  }
+}

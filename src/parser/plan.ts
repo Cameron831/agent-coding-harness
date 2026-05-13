@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 export interface PlannerPlanIssueInput {
@@ -11,6 +12,10 @@ export interface PlannerPlanIssueInput {
 export interface RenderedPlannerIssueInput {
   title: string;
   body: string;
+}
+
+export interface PlannerIssueRenderOptions {
+  planIndex?: number;
 }
 
 export interface PlannerPlanValidationError {
@@ -86,16 +91,20 @@ export function parsePlannerPlanJson(
 }
 
 export function renderPlannerIssueInput(
-  issue: PlannerPlanIssueInput
+  issue: PlannerPlanIssueInput,
+  options: PlannerIssueRenderOptions = {}
 ): RenderedPlannerIssueInput {
   return {
     title: issue.title,
-    body: renderPlannerIssueBody(issue)
+    body: renderPlannerIssueBody(issue, options)
   };
 }
 
-export function renderPlannerIssueBody(issue: PlannerPlanIssueInput): string {
-  return [
+export function renderPlannerIssueBody(
+  issue: PlannerPlanIssueInput,
+  options: PlannerIssueRenderOptions = {}
+): string {
+  const body = [
     "## Goal",
     "",
     issue.goal.trim(),
@@ -112,6 +121,41 @@ export function renderPlannerIssueBody(issue: PlannerPlanIssueInput): string {
     "",
     renderMarkdownList(issue.notes)
   ].join("\n");
+
+  if (options.planIndex === undefined) {
+    return body;
+  }
+
+  return [
+    renderPlannerIssueIdempotencyMarker(
+      generatePlannerIssueIdempotencyKey(issue, options.planIndex)
+    ),
+    "",
+    body
+  ].join("\n");
+}
+
+export function generatePlannerIssueIdempotencyKey(
+  issue: PlannerPlanIssueInput,
+  planIndex: number
+): string {
+  const payload = JSON.stringify({
+    marker: "planner-issue-idempotency-v1",
+    planIndex,
+    issue: {
+      title: issue.title,
+      goal: issue.goal,
+      scope: issue.scope,
+      acceptance_criteria: issue.acceptance_criteria,
+      notes: issue.notes
+    }
+  });
+
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+export function renderPlannerIssueIdempotencyMarker(key: string): string {
+  return `<!-- planner-issue-idempotency-key: ${key} -->`;
 }
 
 function validatePlannerPlanIssue(

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { generatePlannerIssueIdempotencyKey } from "../src/index.js";
 import { runPlannerIssueWorkflow } from "../src/workflow/create-issues.js";
 import type {
   AutomationResult,
@@ -125,6 +126,10 @@ test("planner issue workflow dry-run renders preview without creating a GitHub c
   assert.match(stdout.join("\n"), /Repository: owner\/name/);
   assert.match(stdout.join("\n"), /Issue 1: Add issue workflow/);
   assert.match(stdout.join("\n"), /## Goal/);
+  assert.match(
+    stdout.join("\n"),
+    new RegExp(`<!-- planner-issue-idempotency-key: ${generatePlannerIssueIdempotencyKey(validIssue, 0)} -->`)
+  );
   assert.match(stdout.join("\n"), /Move planner issue orchestration out of the CLI/);
 });
 
@@ -188,6 +193,10 @@ test("planner issue workflow creates live issues sequentially in plan order", as
     owner: "owner",
     name: "name"
   });
+  assert.match(
+    client.createIssueInputs[0]?.body ?? "",
+    new RegExp(`<!-- planner-issue-idempotency-key: ${generatePlannerIssueIdempotencyKey(validIssue, 0)} -->`)
+  );
   assert.match(client.createIssueInputs[0]?.body ?? "", /## Scope/);
   assert.match(stdout.join("\n"), /Created 2 GitHub issues/);
   assert.match(stdout.join("\n"), /#2: Handle partial issue failures/);
