@@ -46,6 +46,12 @@ export {
   runImplementIssueWorkflow
 } from "./workflow/implement/implement.js";
 export {
+  formatImplementSuccess,
+  formatImplementUsage,
+  parseImplementCliArgs,
+  runImplementCli
+} from "./workflow/implement/cli-implement.js";
+export {
   prepareIssueWorkflow,
   runPrepareWorkflow
 } from "./workflow/prepare/prepare.js";
@@ -155,6 +161,12 @@ export type {
   ImplementIssueWorkflowSuccess,
   ImplementVerificationRunner
 } from "./workflow/implement/implement.js";
+export type {
+  ImplementCliOptions,
+  ImplementCliParseResult,
+  ImplementWorkflowRunner,
+  RunImplementCliOptions
+} from "./workflow/implement/cli-implement.js";
 export type {
   PrepareArtifactWriter,
   PreparePromptRenderer,
