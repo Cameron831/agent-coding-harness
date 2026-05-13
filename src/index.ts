@@ -28,6 +28,10 @@ export {
   writeReleasePublishingRunArtifact
 } from "./workflow/release/artifact-writer.js";
 export {
+  releasePublishWorkflow,
+  runReleasePublishWorkflow
+} from "./workflow/release/publish.js";
+export {
   LocalImplementVerificationCommandRunner,
   renderImplementVerificationReport,
   runImplementVerification
@@ -97,6 +101,19 @@ export type {
   WriteImplementArtifactsInput,
   WriteImplementArtifactsResult
 } from "./workflow/implement/artifact-writer.js";
+export type {
+  PublishedRunInput,
+  ReleaseRunArtifactResult,
+  RunPathInput
+} from "./workflow/release/artifact-writer.js";
+export type {
+  ReleasePublishWorkflowDependencies,
+  ReleasePublishWorkflowError,
+  ReleasePublishWorkflowFailureStage,
+  ReleasePublishWorkflowOptions,
+  ReleasePublishWorkflowResult,
+  ReleasePublishWorkflowSuccess
+} from "./workflow/release/publish.js";
 export type {
   ImplementVerificationCheckResult,
   ImplementVerificationClock,
