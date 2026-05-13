@@ -1,14 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-interface RunPathInput {
+export interface RunPathInput {
   runPath: string;
 }
 
-interface PublishedRunInput extends RunPathInput {
+export interface PublishedRunInput extends RunPathInput {
   pullRequestURL: string;
 }
 
-interface ReleaseRunArtifactResult {
+export interface ReleaseRunArtifactResult {
   runPath: string;
   run: Record<string, unknown>;
 }
