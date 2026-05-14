@@ -154,7 +154,7 @@ test("routes release subcommand to injected runner with forwarded argv", async (
   let capturedArgs: readonly string[] | undefined;
 
   const exitCode = await runCli(
-    ["release", "--release", "release.json", "--branch", "issue-77"],
+    ["release", "--issue", "77"],
     {
       runReleaseCli: async (args) => {
         capturedArgs = args;
@@ -164,12 +164,7 @@ test("routes release subcommand to injected runner with forwarded argv", async (
   );
 
   assert.equal(exitCode, 31);
-  assert.deepEqual(capturedArgs, [
-    "--release",
-    "release.json",
-    "--branch",
-    "issue-77"
-  ]);
+  assert.deepEqual(capturedArgs, ["--issue", "77"]);
 });
 
 test("unknown subcommands and missing arguments return top-level usage", async () => {
