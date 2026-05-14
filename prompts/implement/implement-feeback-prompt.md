@@ -21,9 +21,6 @@ Body:
 Feedback:
 {{feedback}}
 
-Current diff:
-{{diff}}
-
 Current release metadata:
 {{releaseJson}}
 
