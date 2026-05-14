@@ -63,6 +63,7 @@ const run = {
 };
 
 const options = {
+  issueNumber: 70,
   releasePath: "release.json",
   runPath: "run.json",
   targetWorktreePath: callerWorktreePath,
@@ -293,7 +294,8 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
         title: release.pull_request.title,
         body: renderReleasePullRequestBody(release),
         base: options.base,
-        head: callerBranch
+        head: callerBranch,
+        linkedIssueNumber: 70
       }
     ]);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, [

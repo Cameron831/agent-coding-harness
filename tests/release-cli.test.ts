@@ -157,6 +157,7 @@ test("release CLI runner forwards resolved options and workflow dependencies", a
 
     assert.equal(exitCode, 0);
     assert.deepEqual(capturedOptions, {
+      issueNumber: 74,
       releasePath: ".runs/issue-74/release.json",
       targetRepositoryPath: "C:/repos/target",
       targetWorktreePath: "C:/repos/worktrees/issue-74",
