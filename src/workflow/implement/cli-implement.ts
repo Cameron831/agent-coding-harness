@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   runImplementIssueWorkflow,
@@ -8,7 +10,10 @@ import {
   type ImplementIssueWorkflowResult
 } from "./implement.js";
 
-export type ImplementCliOptions = ImplementIssueWorkflowOptions;
+export interface ImplementCliOptions {
+  issueNumber: number;
+  runsDirectory?: string;
+}
 
 export type ImplementCliParseResult =
   | {
@@ -32,24 +37,15 @@ export interface RunImplementCliOptions {
   workflowDependencies?: ImplementIssueWorkflowDependencies;
 }
 
-const valueFlags = new Set([
-  "--issue",
-  "--prompt",
-  "--worktree",
-  "--before-head",
-  "--runs-dir"
-]);
+const valueFlags = new Set(["--issue", "--runs-dir"]);
 
 export function formatImplementUsage(): string {
   return [
     "Usage:",
-    "  agent-workforce-implement --issue <number> --prompt <path> --worktree <path> --before-head <sha> [options]",
+    "  agent-workforce implement --issue <number> [options]",
     "",
     "Options:",
     "  --issue <number>       GitHub issue number to implement.",
-    "  --prompt <path>        Path to the prepared implement prompt.",
-    "  --worktree <path>      Path to the prepared issue worktree.",
-    "  --before-head <sha>    HEAD recorded before implementation.",
     "  --runs-dir <path>      Directory for implement run artifacts."
   ].join("\n");
 }
@@ -58,9 +54,6 @@ export function parseImplementCliArgs(
   args: readonly string[]
 ): ImplementCliParseResult {
   let issueNumber: number | undefined;
-  let promptPath: string | undefined;
-  let targetWorktreePath: string | undefined;
-  let beforeHead: string | undefined;
   let runsDirectory: string | undefined;
   const seenFlags = new Set<string>();
 
@@ -84,12 +77,6 @@ export function parseImplementCliArgs(
           return usageFailure("--issue must be a positive integer.");
         }
         issueNumber = parsed;
-      } else if (arg === "--prompt") {
-        promptPath = value;
-      } else if (arg === "--worktree") {
-        targetWorktreePath = value;
-      } else if (arg === "--before-head") {
-        beforeHead = value;
       } else {
         runsDirectory = value;
       }
@@ -109,25 +96,10 @@ export function parseImplementCliArgs(
     return usageFailure("--issue is required.");
   }
 
-  if (promptPath === undefined) {
-    return usageFailure("--prompt is required.");
-  }
-
-  if (targetWorktreePath === undefined) {
-    return usageFailure("--worktree is required.");
-  }
-
-  if (beforeHead === undefined) {
-    return usageFailure("--before-head is required.");
-  }
-
   return {
     ok: true,
     value: {
       issueNumber,
-      promptPath,
-      targetWorktreePath,
-      beforeHead,
       ...(runsDirectory !== undefined ? { runsDirectory } : {})
     }
   };
@@ -146,9 +118,17 @@ export async function runImplementCli(
     return 1;
   }
 
+  let workflowOptions: ImplementIssueWorkflowOptions;
+  try {
+    workflowOptions = await deriveImplementWorkflowOptions(parsed.value);
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+
   const runWorkflow =
     options.runImplementIssueWorkflow ?? runImplementIssueWorkflow;
-  const result = await runWorkflow(parsed.value, options.workflowDependencies);
+  const result = await runWorkflow(workflowOptions, options.workflowDependencies);
 
   if (!result.ok) {
     stderr(
@@ -181,6 +161,95 @@ function parseIssueNumber(value: string): number | undefined {
 
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+async function deriveImplementWorkflowOptions(
+  options: ImplementCliOptions
+): Promise<ImplementIssueWorkflowOptions> {
+  const runsDirectory = options.runsDirectory ?? ".runs";
+  const runDirectory = join(runsDirectory, `issue-${options.issueNumber}`);
+  const promptPath = join(runDirectory, "prompt.md");
+  const runPath = join(runDirectory, "run.json");
+  const run = await loadRunArtifact(runPath);
+
+  return {
+    issueNumber: options.issueNumber,
+    promptPath,
+    targetWorktreePath: run.worktreePath,
+    beforeHead: run.beforeHead,
+    ...(options.runsDirectory !== undefined
+      ? { runsDirectory: options.runsDirectory }
+      : {})
+  };
+}
+
+async function loadRunArtifact(runPath: string): Promise<{
+  worktreePath: string;
+  beforeHead: string;
+}> {
+  let content;
+  try {
+    content = await readFile(runPath, "utf8");
+  } catch (cause) {
+    const code =
+      typeof cause === "object" && cause !== null && "code" in cause
+        ? cause.code
+        : undefined;
+    if (code === "ENOENT") {
+      throw new Error(`Implement run artifact not found: ${runPath}.`);
+    }
+    throw new Error(
+      `Unable to read implement run artifact at ${runPath}: ${messageFromUnknown(cause)}`
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (cause) {
+    throw new Error(
+      `Invalid implement run artifact JSON at ${runPath}: ${messageFromUnknown(cause)}`
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error(`Implement run artifact must be a JSON object: ${runPath}.`);
+  }
+
+  const worktreePath = getStringProperty(parsed, "worktreePath");
+  if (worktreePath === undefined) {
+    throw new Error(
+      `Implement run artifact is missing required string worktreePath: ${runPath}.`
+    );
+  }
+
+  const beforeHead = getStringProperty(parsed, "beforeHead");
+  if (beforeHead === undefined) {
+    throw new Error(
+      `Implement run artifact is missing required string beforeHead: ${runPath}.`
+    );
+  }
+
+  return { worktreePath, beforeHead };
+}
+
+function getStringProperty(
+  value: object,
+  propertyName: "worktreePath" | "beforeHead"
+): string | undefined {
+  const record = value as Record<string, unknown>;
+  if (!(propertyName in record)) {
+    return undefined;
+  }
+
+  const propertyValue = record[propertyName];
+  return typeof propertyValue === "string" && propertyValue.trim() !== ""
+    ? propertyValue
+    : undefined;
+}
+
+function messageFromUnknown(value: unknown): string {
+  return value instanceof Error ? value.message : String(value);
 }
 
 function usageFailure(message: string): ImplementCliParseResult {
