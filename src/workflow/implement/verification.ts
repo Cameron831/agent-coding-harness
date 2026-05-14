@@ -60,7 +60,7 @@ export interface ImplementVerificationResult {
   error?: string;
 }
 
-const defaultTestCommand = "npm run test";
+const defaultTestCommand = "npm ci && npm run test";
 
 export async function runImplementVerification(
   input: ImplementVerificationInput,

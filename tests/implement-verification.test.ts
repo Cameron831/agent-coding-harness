@@ -117,7 +117,7 @@ test("implement verification passes when HEAD is unchanged, files changed, and t
     }
   );
   const commandRunner = new FakeCommandRunner({
-    command: "npm run test",
+    command: "npm ci && npm run test",
     exitCode: 0,
     output: "line 1\nline 2\n"
   });
@@ -155,7 +155,7 @@ test("implement verification passes when HEAD is unchanged, files changed, and t
   assert.deepEqual(gitClient.getChangedFilesInputs, [{ targetWorktreePath }]);
   assert.deepEqual(commandRunner.inputs, [
     {
-      command: "npm run test",
+      command: "npm ci && npm run test",
       cwd: targetWorktreePath
     }
   ]);
@@ -167,7 +167,7 @@ test("implement verification passes when HEAD is unchanged, files changed, and t
   assert.match(result.report, /\[passed\] Worktree has changes/);
   assert.match(result.report, /\[passed\] Test suite/);
   assert.match(result.report, /- src\/workflow\/implement\/verification\.ts/);
-  assert.match(result.report, /Command: npm run test\nExit Code: 0/);
+  assert.match(result.report, /Command: npm ci && npm run test\nExit Code: 0/);
   assert.ok(result.report.endsWith("line 1\nline 2\n"));
 });
 
