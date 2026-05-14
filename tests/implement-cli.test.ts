@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   formatImplementSuccess,
@@ -75,12 +78,6 @@ test("implement CLI parses required and optional implement options", () => {
   const result = parseImplementCliArgs([
     "--issue",
     "73",
-    "--prompt",
-    ".runs/issue-73/prompt.md",
-    "--worktree",
-    "C:/repos/worktrees/issue-73",
-    "--before-head",
-    "abc123before",
     "--runs-dir",
     "custom-runs"
   ]);
@@ -88,84 +85,20 @@ test("implement CLI parses required and optional implement options", () => {
   assert.equal(result.ok, true);
   assert.deepEqual(result.ok && result.value, {
     issueNumber: 73,
-    promptPath: ".runs/issue-73/prompt.md",
-    targetWorktreePath: "C:/repos/worktrees/issue-73",
-    beforeHead: "abc123before",
     runsDirectory: "custom-runs"
   });
 });
 
 test("implement CLI rejects missing required options", () => {
-  const missingIssue = parseImplementCliArgs([
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123"
-  ]);
-  const missingPrompt = parseImplementCliArgs([
-    "--issue",
-    "73",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123"
-  ]);
-  const missingWorktree = parseImplementCliArgs([
-    "--issue",
-    "73",
-    "--prompt",
-    "prompt.md",
-    "--before-head",
-    "abc123"
-  ]);
-  const missingBeforeHead = parseImplementCliArgs([
-    "--issue",
-    "73",
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree"
-  ]);
+  const missingIssue = parseImplementCliArgs(["--runs-dir", ".runs"]);
 
   assert.equal(missingIssue.ok, false);
   assert.match(!missingIssue.ok ? missingIssue.message : "", /--issue is required/);
-  assert.equal(missingPrompt.ok, false);
-  assert.match(!missingPrompt.ok ? missingPrompt.message : "", /--prompt is required/);
-  assert.equal(missingWorktree.ok, false);
-  assert.match(
-    !missingWorktree.ok ? missingWorktree.message : "",
-    /--worktree is required/
-  );
-  assert.equal(missingBeforeHead.ok, false);
-  assert.match(
-    !missingBeforeHead.ok ? missingBeforeHead.message : "",
-    /--before-head is required/
-  );
 });
 
 test("implement CLI validates issue numbers", () => {
-  const invalidIssue = parseImplementCliArgs([
-    "--issue",
-    "0",
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123"
-  ]);
-  const unsafeIssue = parseImplementCliArgs([
-    "--issue",
-    "9007199254740992",
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123"
-  ]);
+  const invalidIssue = parseImplementCliArgs(["--issue", "0"]);
+  const unsafeIssue = parseImplementCliArgs(["--issue", "9007199254740992"]);
 
   assert.equal(invalidIssue.ok, false);
   assert.match(!invalidIssue.ok ? invalidIssue.message : "", /positive integer/);
@@ -178,36 +111,18 @@ test("implement CLI rejects duplicate flags, missing values, unknown options, an
     "--issue",
     "73",
     "--issue",
-    "74",
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123"
+    "74"
   ]);
   const missingValue = parseImplementCliArgs(["--issue"]);
   const unknown = parseImplementCliArgs([
     "--issue",
     "73",
     "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123",
-    "--test-command",
-    "npm test"
+    "prompt.md"
   ]);
   const positional = parseImplementCliArgs([
     "--issue",
     "73",
-    "--prompt",
-    "prompt.md",
-    "--worktree",
-    "worktree",
-    "--before-head",
-    "abc123",
     "extra"
   ]);
 
@@ -216,7 +131,7 @@ test("implement CLI rejects duplicate flags, missing values, unknown options, an
   assert.equal(missingValue.ok, false);
   assert.match(!missingValue.ok ? missingValue.message : "", /requires a value/);
   assert.equal(unknown.ok, false);
-  assert.match(!unknown.ok ? unknown.message : "", /Unknown option: --test-command/);
+  assert.match(!unknown.ok ? unknown.message : "", /Unknown option: --prompt/);
   assert.equal(positional.ok, false);
   assert.match(
     !positional.ok ? positional.message : "",
@@ -246,20 +161,10 @@ test("implement CLI runner forwards parsed options and workflow dependencies", a
   let capturedOptions: ImplementIssueWorkflowOptions | undefined;
   let capturedDependencies: ImplementIssueWorkflowDependencies | undefined;
   const dependencies: ImplementIssueWorkflowDependencies = {};
+  const runsDirectory = await createRunArtifact();
 
   const exitCode = await runImplementCli(
-    [
-      "--issue",
-      "73",
-      "--prompt",
-      ".runs/issue-73/prompt.md",
-      "--worktree",
-      "C:/repos/worktrees/issue-73",
-      "--before-head",
-      "abc123before",
-      "--runs-dir",
-      ".runs"
-    ],
+    ["--issue", "73", "--runs-dir", runsDirectory],
     {
       stdout: () => undefined,
       workflowDependencies: dependencies,
@@ -274,29 +179,104 @@ test("implement CLI runner forwards parsed options and workflow dependencies", a
   assert.equal(exitCode, 0);
   assert.deepEqual(capturedOptions, {
     issueNumber: 73,
-    promptPath: ".runs/issue-73/prompt.md",
+    promptPath: join(runsDirectory, "issue-73", "prompt.md"),
     targetWorktreePath: "C:/repos/worktrees/issue-73",
     beforeHead: "abc123before",
-    runsDirectory: ".runs"
+    runsDirectory
   });
   assert.equal(capturedDependencies, dependencies);
+});
+
+test("implement CLI runner derives workflow options from default issue run directory", async () => {
+  let capturedOptions: ImplementIssueWorkflowOptions | undefined;
+  const root = await mkdtemp(join(tmpdir(), "implement-cli-default-"));
+  const originalCwd = process.cwd();
+
+  try {
+    process.chdir(root);
+    await createRunArtifact(73, undefined, ".runs");
+
+    const exitCode = await runImplementCli(["--issue", "73"], {
+      stdout: () => undefined,
+      runImplementIssueWorkflow: async (options) => {
+        capturedOptions = options;
+        return successResult;
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(capturedOptions, {
+      issueNumber: 73,
+      promptPath: join(".runs", "issue-73", "prompt.md"),
+      targetWorktreePath: "C:/repos/worktrees/issue-73",
+      beforeHead: "abc123before"
+    });
+  } finally {
+    process.chdir(originalCwd);
+  }
+});
+
+test("implement CLI runner fails before workflow when run artifact is missing or invalid", async () => {
+  const cases = [
+    {
+      name: "missing",
+      setup: async () => mkdtemp(join(tmpdir(), "implement-cli-missing-")),
+      expected: /Implement run artifact not found/
+    },
+    {
+      name: "invalid json",
+      setup: async () => createRunArtifact(73, "{"),
+      expected: /Invalid implement run artifact JSON/
+    },
+    {
+      name: "missing worktreePath",
+      setup: async () =>
+        createRunArtifact(
+          73,
+          JSON.stringify({ beforeHead: "abc123before" })
+        ),
+      expected: /missing required string worktreePath/
+    },
+    {
+      name: "missing beforeHead",
+      setup: async () =>
+        createRunArtifact(
+          73,
+          JSON.stringify({ worktreePath: "C:/repos/worktrees/issue-73" })
+        ),
+      expected: /missing required string beforeHead/
+    }
+  ];
+
+  for (const runArtifactCase of cases) {
+    let invoked = false;
+    const stderr: string[] = [];
+    const runsDirectory = await runArtifactCase.setup();
+
+    const exitCode = await runImplementCli(
+      ["--issue", "73", "--runs-dir", runsDirectory],
+      {
+        stderr: (message) => stderr.push(message),
+        runImplementIssueWorkflow: async () => {
+          invoked = true;
+          return successResult;
+        }
+      }
+    );
+
+    assert.equal(exitCode, 1, runArtifactCase.name);
+    assert.equal(invoked, false, runArtifactCase.name);
+    assert.match(stderr.join("\n"), runArtifactCase.expected);
+  }
 });
 
 test("implement CLI runner prints concise success output", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
+  const runsDirectory = await createRunArtifact();
 
   const exitCode = await runImplementCli(
-    [
-      "--issue",
-      "73",
-      "--prompt",
-      ".runs/issue-73/prompt.md",
-      "--worktree",
-      "C:/repos/worktrees/issue-73",
-      "--before-head",
-      "abc123before"
-    ],
+    ["--issue", "73", "--runs-dir", runsDirectory],
     {
       stdout: (message) => stdout.push(message),
       stderr: (message) => stderr.push(message),
@@ -321,18 +301,10 @@ test("implement CLI runner prints concise success output", async () => {
 test("implement CLI runner prints workflow failure stage and message", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
+  const runsDirectory = await createRunArtifact();
 
   const exitCode = await runImplementCli(
-    [
-      "--issue",
-      "73",
-      "--prompt",
-      ".runs/issue-73/prompt.md",
-      "--worktree",
-      "C:/repos/worktrees/issue-73",
-      "--before-head",
-      "abc123before"
-    ],
+    ["--issue", "73", "--runs-dir", runsDirectory],
     {
       stdout: (message) => stdout.push(message),
       stderr: (message) => stderr.push(message),
@@ -354,3 +326,19 @@ test("implement CLI runner prints workflow failure stage and message", async () 
     /Implement workflow failed at verification: tests failed/
   );
 });
+
+async function createRunArtifact(
+  issueNumber = 73,
+  content = JSON.stringify({
+    worktreePath: "C:/repos/worktrees/issue-73",
+    beforeHead: "abc123before"
+  }),
+  runsDirectory?: string
+): Promise<string> {
+  const artifactRunsDirectory =
+    runsDirectory ?? (await mkdtemp(join(tmpdir(), "implement-cli-")));
+  const runDirectory = join(artifactRunsDirectory, `issue-${issueNumber}`);
+  await mkdir(runDirectory, { recursive: true });
+  await writeFile(join(runDirectory, "run.json"), content, "utf8");
+  return artifactRunsDirectory;
+}
