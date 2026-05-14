@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { RepositorySelection } from "../../github/types.js";
 import {
@@ -53,7 +55,7 @@ const valueFlags = new Set([
 export function formatPrepareUsage(): string {
   return [
     "Usage:",
-    "  agent-workforce-prepare --issue <number> --target-repo <path> --worktree-parent <path> [options]",
+    "  agent-workforce-prepare --issue <number> [--target-repo <path>] [--worktree-parent <path>] [options]",
     "",
     "Options:",
     "  --issue <number>             GitHub issue number to prepare.",
@@ -63,7 +65,10 @@ export function formatPrepareUsage(): string {
     "  --base-ref <ref>             Base ref for the prepared worktree.",
     "  --prompt-variant <variant>   Prompt variant: standard or with-subagents.",
     "  --prompts-dir <path>         Directory containing prepare prompt templates.",
-    "  --runs-dir <path>            Directory for prepare run artifacts."
+    "  --runs-dir <path>            Directory for prepare run artifacts.",
+    "",
+    "Defaults:",
+    "  .env in the current directory may provide TARGET_REPO_PATH, WORKTREE_PARENT_PATH, and REPO_SLUG."
   ].join("\n");
 }
 
@@ -163,6 +168,22 @@ export function parsePrepareCliArgs(
     return usageFailure("--issue is required.");
   }
 
+  const envDefaults = loadPrepareEnvDefaults();
+  targetRepositoryPath ??= envDefaults.targetRepositoryPath;
+  worktreeParentPath ??= envDefaults.worktreeParentPath;
+
+  if (repository === undefined && envDefaults.repository !== undefined) {
+    try {
+      repository = parsePrepareRepository(envDefaults.repository);
+    } catch (error) {
+      return usageFailure(
+        error instanceof Error
+          ? error.message
+          : "Repository must use exact owner/name format."
+      );
+    }
+  }
+
   if (targetRepositoryPath === undefined) {
     return usageFailure("--target-repo is required.");
   }
@@ -237,6 +258,61 @@ function parseIssueNumber(value: string): number | undefined {
 
 function isPromptVariant(value: string): value is PreparePromptVariant {
   return promptVariants.includes(value as PreparePromptVariant);
+}
+
+interface PrepareEnvDefaults {
+  targetRepositoryPath?: string;
+  worktreeParentPath?: string;
+  repository?: string;
+}
+
+function loadPrepareEnvDefaults(): PrepareEnvDefaults {
+  let contents: string;
+  try {
+    contents = readFileSync(join(process.cwd(), ".env"), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
+
+  const values = parsePrepareEnv(contents);
+  return {
+    ...(values.TARGET_REPO_PATH !== undefined
+      ? { targetRepositoryPath: values.TARGET_REPO_PATH }
+      : {}),
+    ...(values.WORKTREE_PARENT_PATH !== undefined
+      ? { worktreeParentPath: values.WORKTREE_PARENT_PATH }
+      : {}),
+    ...(values.REPO_SLUG !== undefined ? { repository: values.REPO_SLUG } : {})
+  };
+}
+
+function parsePrepareEnv(contents: string): Record<string, string> {
+  const values: Record<string, string> = {};
+
+  for (const line of contents.split(/\r?\n/)) {
+    const trimmedStart = line.trimStart();
+    if (trimmedStart === "" || trimmedStart.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1);
+    if (key === "" || value.trim() === "") {
+      continue;
+    }
+
+    values[key] = value;
+  }
+
+  return values;
 }
 
 function usageFailure(message: string): PrepareCliParseResult {
