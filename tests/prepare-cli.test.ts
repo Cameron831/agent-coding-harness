@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   formatPrepareSuccess,
@@ -83,38 +86,154 @@ test("prepare CLI parses required and optional prepare options", () => {
   });
 });
 
-test("prepare CLI rejects missing required options", () => {
-  const missingIssue = parsePrepareCliArgs([
-    "--target-repo",
-    "repo",
-    "--worktree-parent",
-    "worktrees"
-  ]);
-  const missingTarget = parsePrepareCliArgs([
-    "--issue",
-    "67",
-    "--worktree-parent",
-    "worktrees"
-  ]);
-  const missingWorktreeParent = parsePrepareCliArgs([
-    "--issue",
-    "67",
-    "--target-repo",
-    "repo"
-  ]);
+test("prepare CLI rejects missing required options", async () => {
+  await withTemporaryCwd(async () => {
+    const missingIssue = parsePrepareCliArgs([
+      "--target-repo",
+      "repo",
+      "--worktree-parent",
+      "worktrees"
+    ]);
+    const missingTarget = parsePrepareCliArgs([
+      "--issue",
+      "67",
+      "--worktree-parent",
+      "worktrees"
+    ]);
+    const missingWorktreeParent = parsePrepareCliArgs([
+      "--issue",
+      "67",
+      "--target-repo",
+      "repo"
+    ]);
 
-  assert.equal(missingIssue.ok, false);
-  assert.match(!missingIssue.ok ? missingIssue.message : "", /--issue is required/);
-  assert.equal(missingTarget.ok, false);
-  assert.match(
-    !missingTarget.ok ? missingTarget.message : "",
-    /--target-repo is required/
-  );
-  assert.equal(missingWorktreeParent.ok, false);
-  assert.match(
-    !missingWorktreeParent.ok ? missingWorktreeParent.message : "",
-    /--worktree-parent is required/
-  );
+    assert.equal(missingIssue.ok, false);
+    assert.match(
+      !missingIssue.ok ? missingIssue.message : "",
+      /--issue is required/
+    );
+    assert.equal(missingTarget.ok, false);
+    assert.match(
+      !missingTarget.ok ? missingTarget.message : "",
+      /--target-repo is required/
+    );
+    assert.equal(missingWorktreeParent.ok, false);
+    assert.match(
+      !missingWorktreeParent.ok ? missingWorktreeParent.message : "",
+      /--worktree-parent is required/
+    );
+  });
+});
+
+test("prepare CLI loads target repo, worktree parent, and repository defaults from .env", async () => {
+  await withTemporaryCwd(async (directory) => {
+    writeFileSync(
+      join(directory, ".env"),
+      [
+        "# prepare defaults",
+        "",
+        "TARGET_REPO_PATH=C:/repos/env-target",
+        "WORKTREE_PARENT_PATH=C:/repos/env-worktrees",
+        "REPO_SLUG=env-owner/env-name"
+      ].join("\n")
+    );
+
+    const result = parsePrepareCliArgs(["--issue", "89"]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.ok && result.value, {
+      issueNumber: 89,
+      targetRepositoryPath: "C:/repos/env-target",
+      worktreeParentPath: "C:/repos/env-worktrees",
+      repository: { owner: "env-owner", name: "env-name" }
+    });
+  });
+});
+
+test("prepare CLI explicit options override .env defaults", async () => {
+  await withTemporaryCwd(async (directory) => {
+    writeFileSync(
+      join(directory, ".env"),
+      [
+        "TARGET_REPO_PATH=C:/repos/env-target",
+        "WORKTREE_PARENT_PATH=C:/repos/env-worktrees",
+        "REPO_SLUG=env-owner/env-name"
+      ].join("\n")
+    );
+
+    const result = parsePrepareCliArgs([
+      "--issue",
+      "89",
+      "--target-repo",
+      "C:/repos/cli-target",
+      "--worktree-parent",
+      "C:/repos/cli-worktrees",
+      "--repo",
+      "cli-owner/cli-name"
+    ]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.ok && result.value, {
+      issueNumber: 89,
+      targetRepositoryPath: "C:/repos/cli-target",
+      worktreeParentPath: "C:/repos/cli-worktrees",
+      repository: { owner: "cli-owner", name: "cli-name" }
+    });
+  });
+});
+
+test("prepare CLI ignores missing .env files and missing .env values", async () => {
+  await withTemporaryCwd(async (directory) => {
+    const missingFile = parsePrepareCliArgs(["--issue", "89"]);
+
+    writeFileSync(
+      join(directory, ".env"),
+      ["# no target defaults", "", "REPO_SLUG=owner/name"].join("\n")
+    );
+    const missingTarget = parsePrepareCliArgs(["--issue", "89"]);
+
+    writeFileSync(
+      join(directory, ".env"),
+      ["TARGET_REPO_PATH=C:/repos/env-target", "REPO_SLUG=owner/name"].join(
+        "\n"
+      )
+    );
+    const missingWorktreeParent = parsePrepareCliArgs(["--issue", "89"]);
+
+    assert.equal(missingFile.ok, false);
+    assert.match(
+      !missingFile.ok ? missingFile.message : "",
+      /--target-repo is required/
+    );
+    assert.equal(missingTarget.ok, false);
+    assert.match(
+      !missingTarget.ok ? missingTarget.message : "",
+      /--target-repo is required/
+    );
+    assert.equal(missingWorktreeParent.ok, false);
+    assert.match(
+      !missingWorktreeParent.ok ? missingWorktreeParent.message : "",
+      /--worktree-parent is required/
+    );
+  });
+});
+
+test("prepare CLI rejects invalid REPO_SLUG defaults", async () => {
+  await withTemporaryCwd(async (directory) => {
+    writeFileSync(
+      join(directory, ".env"),
+      [
+        "TARGET_REPO_PATH=C:/repos/env-target",
+        "WORKTREE_PARENT_PATH=C:/repos/env-worktrees",
+        "REPO_SLUG=owner/name/extra"
+      ].join("\n")
+    );
+
+    const result = parsePrepareCliArgs(["--issue", "89"]);
+
+    assert.equal(result.ok, false);
+    assert.match(!result.ok ? result.message : "", /owner\/name/);
+  });
 });
 
 test("prepare CLI validates issue numbers, repositories, and prompt variants", () => {
@@ -231,52 +350,57 @@ test("prepare CLI runner returns usage failure before invoking workflow", async 
 });
 
 test("prepare CLI runner forwards parsed options and workflow dependencies", async () => {
-  let capturedOptions: PrepareWorkflowOptions | undefined;
-  let capturedDependencies: PrepareWorkflowDependencies | undefined;
-  const dependencies: PrepareWorkflowDependencies = {};
+  await withTemporaryCwd(async (directory) => {
+    writeFileSync(
+      join(directory, ".env"),
+      [
+        "TARGET_REPO_PATH=C:/repos/target",
+        "WORKTREE_PARENT_PATH=C:/repos/worktrees",
+        "REPO_SLUG=owner/name"
+      ].join("\n")
+    );
 
-  const exitCode = await runPrepareCli(
-    [
-      "--issue",
-      "67",
-      "--target-repo",
-      "C:/repos/target",
-      "--worktree-parent",
-      "C:/repos/worktrees",
-      "--repo",
-      "owner/name",
-      "--base-ref",
-      "main",
-      "--prompt-variant",
-      "standard",
-      "--prompts-dir",
-      "prompts",
-      "--runs-dir",
-      ".runs"
-    ],
-    {
-      stdout: () => undefined,
-      workflowDependencies: dependencies,
-      runPrepareWorkflow: async (options, workflowDependencies) => {
-        capturedOptions = options;
-        capturedDependencies = workflowDependencies;
-        return successResult;
+    let capturedOptions: PrepareWorkflowOptions | undefined;
+    let capturedDependencies: PrepareWorkflowDependencies | undefined;
+    const dependencies: PrepareWorkflowDependencies = {};
+
+    const exitCode = await runPrepareCli(
+      [
+        "--issue",
+        "67",
+        "--base-ref",
+        "main",
+        "--prompt-variant",
+        "standard",
+        "--prompts-dir",
+        "prompts",
+        "--runs-dir",
+        ".runs"
+      ],
+      {
+        stdout: () => undefined,
+        workflowDependencies: dependencies,
+        runPrepareWorkflow: async (options, workflowDependencies) => {
+          capturedOptions = options;
+          capturedDependencies = workflowDependencies;
+          return successResult;
+        }
       }
-    }
-  );
+    );
 
-  assert.equal(exitCode, 0);
-  assert.deepEqual(capturedOptions, {
-    issueNumber: 67,
-    targetRepositoryPath: "C:/repos/target",
-    worktreeParentPath: "C:/repos/worktrees",
-    repository: { owner: "owner", name: "name" },
-    baseRef: "main",
-    promptVariant: "standard",
-    promptsDirectory: "prompts",
-    runsDirectory: ".runs"
+    assert.equal(exitCode, 0);
+    assert.deepEqual(capturedOptions, {
+      issueNumber: 67,
+      targetRepositoryPath: "C:/repos/target",
+      worktreeParentPath: "C:/repos/worktrees",
+      repository: { owner: "owner", name: "name" },
+      baseRef: "main",
+      promptVariant: "standard",
+      promptsDirectory: "prompts",
+      runsDirectory: ".runs"
+    });
+    assert.equal(capturedDependencies, dependencies);
   });
-  assert.equal(capturedDependencies, dependencies);
 });
 
 test("prepare CLI runner prints concise success output", async () => {
@@ -344,3 +468,18 @@ test("prepare CLI runner prints workflow failure stage and message", async () =>
     /Prepare workflow failed at workspace_prep: branch already exists/
   );
 });
+
+async function withTemporaryCwd<T>(
+  callback: (directory: string) => T | Promise<T>
+): Promise<T> {
+  const previousDirectory = process.cwd();
+  const directory = mkdtempSync(join(tmpdir(), "prepare-cli-"));
+
+  process.chdir(directory);
+  try {
+    return await callback(directory);
+  } finally {
+    process.chdir(previousDirectory);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
