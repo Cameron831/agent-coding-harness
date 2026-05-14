@@ -55,3 +55,5 @@ Do not:
 - Change GitHub state.
 - Run the final verification gate.
 - Use subagents.
+- Run tests, linters, typechecks, package installs, or build commands.
+- Install dependencies or recover missing dependencies.
