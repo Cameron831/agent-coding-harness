@@ -60,7 +60,6 @@ test("with-subagents implement prompt matches standard structure and harness bou
   assert.match(prompt, /The harness owns run state, artifact storage/);
   assert.match(prompt, /Use only the `exec-planner` and `executor` subagents\./);
   assert.match(prompt, /Use subagents other than `exec-planner` and `executor`\./);
-  assertReleaseMetadataContract(prompt);
   assertNoPromptOwnedArtifacts(prompt);
   assert.doesNotMatch(prompt, /releaseJson/);
 });
@@ -82,13 +81,13 @@ test("feedback implement prompt matches standard structure and targeted revision
     "## Restrictions"
   ]);
   assert.match(prompt, /Feedback:\n{{feedback}}/);
-  assert.match(prompt, /Current diff:\n{{diff}}/);
   assert.match(prompt, /Current release metadata:\n{{releaseJson}}/);
+  assert.doesNotMatch(prompt, /{{diff}}/);
   assert.match(prompt, /Apply only the correction requested by the injected feedback\./);
   assert.match(prompt, /Preserve already-approved work/);
   assert.match(prompt, /Do not restart from scratch\./);
   assert.match(prompt, /The harness owns run state, artifact storage/);
-  assertReleaseMetadataContract(prompt);
+  assert.match(prompt, /final release metadata/);
   assertNoPromptOwnedArtifacts(prompt);
 });
 
@@ -223,13 +222,6 @@ function assertSectionOrder(prompt: string, sections: readonly string[]): void {
     );
     previousIndex = currentIndex;
   }
-}
-
-function assertReleaseMetadataContract(prompt: string): void {
-  assert.match(prompt, /final release metadata/);
-  assert.match(prompt, /`commit_message`/);
-  assert.match(prompt, /`pull_request`/);
-  assert.match(prompt, /snake_case fields/);
 }
 
 function assertNoPromptOwnedArtifacts(prompt: string): void {

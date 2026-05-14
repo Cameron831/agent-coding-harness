@@ -62,7 +62,7 @@ Use subagents only for the bounded planning and implementation responsibilities 
 3. Use `exec-planner` to form a brief implementation plan.
 4. Use `executor` to implement the smallest viable change.
 5. Inspect the final diff.
-6. Return final release metadata as your structured response, using `commit_message` and `pull_request` snake_case fields.
+6. Return final release metadata as your structured response.
 
 ## Restrictions
 
