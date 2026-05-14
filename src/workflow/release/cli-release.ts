@@ -214,6 +214,7 @@ function resolveReleaseWorkflowOptions(
   return {
     ok: true,
     value: {
+      issueNumber,
       releasePath,
       runPath,
       targetRepositoryPath: env.value.targetRepositoryPath,

@@ -34,6 +34,7 @@ import {
 } from "./artifact-writer.js";
 
 export interface ReleasePublishWorkflowOptions {
+  issueNumber?: number;
   releasePath: string;
   runPath?: string;
   targetWorktreePath: string;
@@ -263,7 +264,10 @@ function buildPullRequestInput(
     title: rendered.title,
     body: rendered.body,
     base: options.base,
-    head
+    head,
+    ...(options.issueNumber !== undefined
+      ? { linkedIssueNumber: options.issueNumber }
+      : {})
   };
 }
 
