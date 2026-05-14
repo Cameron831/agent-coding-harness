@@ -39,10 +39,58 @@ test("renderPreparePrompt selects the with-subagents implement prompt", async ()
     variant: "with-subagents"
   });
 
-  assert.match(prompt, /Use the `exec-planner` subagent/);
-  assert.match(prompt, /Use the `executor` subagent/);
+  assert.match(prompt, /Use `exec-planner` to form a brief implementation plan/);
+  assert.match(prompt, /Use `executor` to implement the smallest viable change/);
 });
 
+test("with-subagents implement prompt matches standard structure and harness boundaries", async () => {
+  const prompt = await renderPreparePrompt({
+    issue: baseIssue,
+    variant: "with-subagents"
+  });
+
+  assertSectionOrder(prompt, [
+    "## Issue Context",
+    "## Role",
+    "## Scope Rules",
+    "## Subagent Responsibilities",
+    "## Workflow",
+    "## Restrictions"
+  ]);
+  assert.match(prompt, /The harness owns run state, artifact storage/);
+  assert.match(prompt, /Use only the `exec-planner` and `executor` subagents\./);
+  assert.match(prompt, /Use subagents other than `exec-planner` and `executor`\./);
+  assertReleaseMetadataContract(prompt);
+  assertNoPromptOwnedArtifacts(prompt);
+  assert.doesNotMatch(prompt, /releaseJson/);
+});
+
+test("feedback implement prompt matches standard structure and targeted revision rules", async () => {
+  const prompt = normalizeLineEndings(
+    await readFile(
+      join("prompts", "implement", "implement-feeback-prompt.md"),
+      "utf8"
+    )
+  );
+
+  assertSectionOrder(prompt, [
+    "## Issue Context",
+    "## Feedback Context",
+    "## Role",
+    "## Scope Rules",
+    "## Workflow",
+    "## Restrictions"
+  ]);
+  assert.match(prompt, /Feedback:\n{{feedback}}/);
+  assert.match(prompt, /Current diff:\n{{diff}}/);
+  assert.match(prompt, /Current release metadata:\n{{releaseJson}}/);
+  assert.match(prompt, /Apply only the correction requested by the injected feedback\./);
+  assert.match(prompt, /Preserve already-approved work/);
+  assert.match(prompt, /Do not restart from scratch\./);
+  assert.match(prompt, /The harness owns run state, artifact storage/);
+  assertReleaseMetadataContract(prompt);
+  assertNoPromptOwnedArtifacts(prompt);
+});
 
 test("renderPreparePrompt replaces supported placeholders and leaves unsupported placeholders unchanged", async () => {
   await withCustomPrompts(
@@ -161,4 +209,52 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function assertSectionOrder(prompt: string, sections: readonly string[]): void {
+  let previousIndex = -1;
+
+  for (const section of sections) {
+    const currentIndex = prompt.indexOf(section);
+    assert.notEqual(currentIndex, -1, `Missing section ${section}`);
+    assert.ok(
+      currentIndex > previousIndex,
+      `Expected ${section} to appear after the previous section`
+    );
+    previousIndex = currentIndex;
+  }
+}
+
+function assertReleaseMetadataContract(prompt: string): void {
+  assert.match(prompt, /final release metadata/);
+  assert.match(prompt, /`commit_message`/);
+  assert.match(prompt, /`pull_request`/);
+  assert.match(prompt, /snake_case fields/);
+}
+
+function assertNoPromptOwnedArtifacts(prompt: string): void {
+  const normalizedPrompt = normalizeLineEndings(prompt);
+
+  assert.doesNotMatch(normalizedPrompt, /Create the run directory/);
+  assert.doesNotMatch(normalizedPrompt, /Artifacts:\n/);
+  assert.doesNotMatch(
+    normalizedPrompt,
+    /`release\.json` is the only artifact produced/
+  );
+  assert.doesNotMatch(
+    normalizedPrompt,
+    /Write `\.runs\/issue-<issue-number>\/release\.json`/
+  );
+  assert.doesNotMatch(
+    normalizedPrompt,
+    /Update `\.runs\/issue-<issue-number>\/release\.json`/
+  );
+  assert.doesNotMatch(
+    normalizedPrompt,
+    /Run the final verification gate\.(?!\n-)/
+  );
+}
+
+function normalizeLineEndings(value: string): string {
+  return value.replaceAll("\r\n", "\n");
 }
