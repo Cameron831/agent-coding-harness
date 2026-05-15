@@ -15,15 +15,6 @@ Use `.agents/planner/AGENTS.md` for Feature to Issues work:
 - Draft a small, reviewable JSON issue plan after feature approval.
 - Stop after the user approves the JSON issue plan.
 
-### Implementor
-
-Use `.agents/implementor/AGENTS.md` for Issue to Release Metadata work:
-
-- Turn an approved issue into an execution plan.
-- Implement approved changes and tests.
-- Verify and produce release metadata JSON with a commit message, PR title, and PR body.
-- Do not interact with GitHub directly.
-
 ### QA
 
 Use `.agents/qa/AGENTS.md` for PR review work:
