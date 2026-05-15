@@ -3,7 +3,7 @@ import {
   access,
   mkdir,
   mkdtemp,
-  readFile,
+  readdir,
   rm,
   writeFile
 } from "node:fs/promises";
@@ -11,9 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  renderPreparePrompt,
-  type IssueDetails,
-  type PreparePromptVariant
+  renderFeedbackPrompt,
+  renderImplementPrompt,
+  type IssueDetails
 } from "../src/index.js";
 
 const baseIssue: IssueDetails = {
@@ -24,8 +24,8 @@ const baseIssue: IssueDetails = {
   state: "open"
 };
 
-test("renderPreparePrompt defaults to the standard implement prompt", async () => {
-  const prompt = await renderPreparePrompt({ issue: baseIssue });
+test("renderImplementPrompt defaults to the standard implement prompt", async () => {
+  const prompt = await renderImplementPrompt({ issue: baseIssue });
 
   assert.match(prompt, /GitHub issue #43/);
   assert.match(prompt, /Add prepare prompt builder/);
@@ -33,18 +33,21 @@ test("renderPreparePrompt defaults to the standard implement prompt", async () =
   assert.match(prompt, /Do not use subagents\./);
 });
 
-test("renderPreparePrompt selects the with-subagents implement prompt", async () => {
-  const prompt = await renderPreparePrompt({
+test("renderImplementPrompt selects the with-subagents implement prompt", async () => {
+  const prompt = await renderImplementPrompt({
     issue: baseIssue,
     variant: "with-subagents"
   });
 
+  assert.match(prompt, /GitHub issue #43/);
+  assert.match(prompt, /Add prepare prompt builder/);
+  assert.match(prompt, /Render implement prompts from issue details\./);
   assert.match(prompt, /Use `exec-planner` to form a brief implementation plan/);
   assert.match(prompt, /Use `executor` to implement the smallest viable change/);
 });
 
 test("with-subagents implement prompt matches standard structure and harness boundaries", async () => {
-  const prompt = await renderPreparePrompt({
+  const prompt = await renderImplementPrompt({
     issue: baseIssue,
     variant: "with-subagents"
   });
@@ -64,12 +67,13 @@ test("with-subagents implement prompt matches standard structure and harness bou
   assert.doesNotMatch(prompt, /releaseJson/);
 });
 
-test("feedback implement prompt matches standard structure and targeted revision rules", async () => {
+test("renderFeedbackPrompt renders the feedback implement prompt", async () => {
   const prompt = normalizeLineEndings(
-    await readFile(
-      join("prompts", "implement", "implement-feeback-prompt.md"),
-      "utf8"
-    )
+    await renderFeedbackPrompt({
+      issue: baseIssue,
+      feedback: "Keep the implementation scoped.",
+      releaseJson: "{\"commit_message\":\"Add prompt renderer\"}"
+    })
   );
 
   assertSectionOrder(prompt, [
@@ -80,8 +84,14 @@ test("feedback implement prompt matches standard structure and targeted revision
     "## Workflow",
     "## Restrictions"
   ]);
-  assert.match(prompt, /Feedback:\n{{feedback}}/);
-  assert.match(prompt, /Current release metadata:\n{{releaseJson}}/);
+  assert.match(prompt, /GitHub issue #43/);
+  assert.match(prompt, /Add prepare prompt builder/);
+  assert.match(prompt, /Render implement prompts from issue details\./);
+  assert.match(prompt, /Feedback:\nKeep the implementation scoped\./);
+  assert.match(
+    prompt,
+    /Current release metadata:\n{"commit_message":"Add prompt renderer"}/
+  );
   assert.doesNotMatch(prompt, /{{diff}}/);
   assert.match(prompt, /Apply only the correction requested by the injected feedback\./);
   assert.match(prompt, /Preserve already-approved work/);
@@ -91,7 +101,20 @@ test("feedback implement prompt matches standard structure and targeted revision
   assertNoPromptOwnedArtifacts(prompt);
 });
 
-test("renderPreparePrompt replaces supported placeholders and leaves unsupported placeholders unchanged", async () => {
+test("feedback implement prompt uses the correctly spelled template path", async () => {
+  const promptFiles = await readdir(join("prompts", "implement"));
+
+  assert.equal(
+    await exists(join("prompts", "implement", "implement-feedback-prompt.md")),
+    true
+  );
+  assert.equal(
+    promptFiles.some((fileName) => fileName.includes("fee" + "back")),
+    false
+  );
+});
+
+test("renderImplementPrompt replaces supported placeholders and leaves unsupported placeholders unchanged", async () => {
   await withCustomPrompts(
     {
       "implement-prompt.md":
@@ -99,7 +122,7 @@ test("renderPreparePrompt replaces supported placeholders and leaves unsupported
       "implement-with-subagents-prompt.md": "unused"
     },
     async (promptsDirectory) => {
-      const prompt = await renderPreparePrompt({
+      const prompt = await renderImplementPrompt({
         issue: baseIssue,
         promptsDirectory
       });
@@ -112,14 +135,14 @@ test("renderPreparePrompt replaces supported placeholders and leaves unsupported
   );
 });
 
-test("renderPreparePrompt renders a missing issue body as an empty string", async () => {
+test("renderImplementPrompt renders a missing issue body as an empty string", async () => {
   await withCustomPrompts(
     {
       "implement-prompt.md": "Body begins>{{body}}<Body ends",
       "implement-with-subagents-prompt.md": "unused"
     },
     async (promptsDirectory) => {
-      const prompt = await renderPreparePrompt({
+      const prompt = await renderImplementPrompt({
         issue: { ...baseIssue, body: undefined },
         promptsDirectory
       });
@@ -129,26 +152,76 @@ test("renderPreparePrompt renders a missing issue body as an empty string", asyn
   );
 });
 
-test("renderPreparePrompt uses a supplied custom prompts directory", async () => {
+test("renderImplementPrompt keeps custom directory support for prepare callers", async () => {
+  await withCustomPrompts(
+    {
+      "implement-prompt.md": "prepare standard {{number}}",
+      "implement-with-subagents-prompt.md": "prepare subagents {{title}}"
+    },
+    async (promptsDirectory) => {
+      const standardPrompt = await renderImplementPrompt({
+        issue: baseIssue,
+        promptsDirectory
+      });
+      const subagentsPrompt = await renderImplementPrompt({
+        issue: baseIssue,
+        variant: "with-subagents",
+        promptsDirectory
+      });
+
+      assert.equal(standardPrompt, "prepare standard 43");
+      assert.equal(subagentsPrompt, "prepare subagents Add prepare prompt builder");
+    }
+  );
+});
+
+test("renderImplementPrompt uses a supplied custom prompts directory for initial variants", async () => {
   await withCustomPrompts(
     {
       "implement-prompt.md": "custom standard {{number}}",
       "implement-with-subagents-prompt.md": "custom subagents {{title}}"
     },
     async (promptsDirectory) => {
-      const variant: PreparePromptVariant = "with-subagents";
-      const prompt = await renderPreparePrompt({
+      const standardPrompt = await renderImplementPrompt({
         issue: baseIssue,
-        variant,
+        variant: "standard",
+        promptsDirectory
+      });
+      const subagentsPrompt = await renderImplementPrompt({
+        issue: baseIssue,
+        variant: "with-subagents",
         promptsDirectory
       });
 
-      assert.equal(prompt, "custom subagents Add prepare prompt builder");
+      assert.equal(standardPrompt, "custom standard 43");
+      assert.equal(subagentsPrompt, "custom subagents Add prepare prompt builder");
     }
   );
 });
 
-test("renderPreparePrompt returns a string without writing prepare artifacts", async () => {
+test("renderFeedbackPrompt uses a supplied custom prompts directory", async () => {
+  await withCustomPrompts(
+    {
+      "implement-feedback-prompt.md":
+        "custom feedback {{number}} {{feedback}} {{releaseJson}}"
+    },
+    async (promptsDirectory) => {
+      const feedbackPrompt = await renderFeedbackPrompt({
+        issue: baseIssue,
+        promptsDirectory,
+        feedback: "Revise tests.",
+        releaseJson: "{\"status\":\"draft\"}"
+      });
+
+      assert.equal(
+        feedbackPrompt,
+        "custom feedback 43 Revise tests. {\"status\":\"draft\"}"
+      );
+    }
+  );
+});
+
+test("renderFeedbackPrompt returns a string without writing artifacts", async () => {
   const root = await mkdtemp(join(tmpdir(), "prompt-builder-boundary-"));
   const originalCwd = process.cwd();
 
@@ -165,14 +238,21 @@ test("renderPreparePrompt returns a string without writing prepare artifacts", a
       "subagents {{number}}",
       "utf8"
     );
+    await writeFile(
+      join(promptsDirectory, "implement-feedback-prompt.md"),
+      "feedback {{number}} {{feedback}} {{releaseJson}}",
+      "utf8"
+    );
 
     process.chdir(root);
-    const prompt = await renderPreparePrompt({
+    const prompt = await renderFeedbackPrompt({
       issue: baseIssue,
-      promptsDirectory
+      promptsDirectory,
+      feedback: "No artifacts.",
+      releaseJson: "{}"
     });
 
-    assert.equal(prompt, "prompt 43");
+    assert.equal(prompt, "feedback 43 No artifacts. {}");
     assert.equal(typeof prompt, "string");
     assert.equal(await exists(join(root, ".runs")), false);
     assert.equal(await exists(join(root, "prompt.md")), false);

@@ -10,7 +10,7 @@ import {
   type PrepareWorkflowOptions,
   type PrepareWorkflowResult
 } from "./prepare.js";
-import type { PreparePromptVariant } from "./prompt-builder.js";
+import type { ImplementPromptVariant } from "../prompt-builder.js";
 
 export type PrepareCliOptions = PrepareWorkflowOptions;
 
@@ -36,7 +36,7 @@ export interface RunPrepareCliOptions {
   workflowDependencies?: PrepareWorkflowDependencies;
 }
 
-const promptVariants: readonly PreparePromptVariant[] = [
+const promptVariants: readonly ImplementPromptVariant[] = [
   "standard",
   "with-subagents"
 ];
@@ -99,7 +99,7 @@ export function parsePrepareCliArgs(
   let worktreeParentPath: string | undefined;
   let repository: RepositorySelection | undefined;
   let baseRef: string | undefined;
-  let promptVariant: PreparePromptVariant | undefined;
+  let promptVariant: ImplementPromptVariant | undefined;
   let promptsDirectory: string | undefined;
   let runsDirectory: string | undefined;
   const seenFlags = new Set<string>();
@@ -256,8 +256,8 @@ function parseIssueNumber(value: string): number | undefined {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
-function isPromptVariant(value: string): value is PreparePromptVariant {
-  return promptVariants.includes(value as PreparePromptVariant);
+function isPromptVariant(value: string): value is ImplementPromptVariant {
+  return promptVariants.includes(value as ImplementPromptVariant);
 }
 
 interface PrepareEnvDefaults {
