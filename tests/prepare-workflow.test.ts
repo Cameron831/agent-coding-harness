@@ -30,7 +30,7 @@ import {
   type PushBranchInput,
   type PushBranchResult,
   type PullRequestDetails,
-  type RenderPreparePromptInput,
+  type RenderImplementPromptInput,
   type StageFilesInput,
   type StageFilesResult,
   type WorktreeDetails
@@ -152,7 +152,7 @@ test("prepare workflow fetches the issue before workspace prep, prompt rendering
     value: fetchedIssue
   });
   const prepareWorkspaceInputs: PrepareIssueWorkspaceInput[] = [];
-  const renderPromptInputs: RenderPreparePromptInput[] = [];
+  const renderPromptInputs: RenderImplementPromptInput[] = [];
   const writeArtifactInputs: PrepareArtifactWriterInput[] = [];
   const gitClient = new FakeGitClient(undefined, () => events.push("head"));
 

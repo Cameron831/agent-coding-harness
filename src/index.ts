@@ -71,9 +71,11 @@ export {
 } from "./workflow/prepare/cli-prepare.js";
 export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
 export {
-  buildPreparePrompt,
-  renderPreparePrompt
-} from "./workflow/prepare/prompt-builder.js";
+  buildFeedbackPrompt,
+  buildImplementPrompt,
+  renderFeedbackPrompt,
+  renderImplementPrompt
+} from "./workflow/prompt-builder.js";
 export { prepareIssueWorkspace } from "./workflow/prepare/workspace-prep.js";
 export type {
   GhCommandResult,
@@ -208,10 +210,12 @@ export type {
   WritePrepareArtifactsResult
 } from "./workflow/prepare/artifact-writer.js";
 export type {
-  BuildPreparePromptInput,
-  PreparePromptVariant,
-  RenderPreparePromptInput
-} from "./workflow/prepare/prompt-builder.js";
+  BuildFeedbackPromptInput,
+  BuildImplementPromptInput,
+  ImplementPromptVariant,
+  RenderFeedbackPromptInput,
+  RenderImplementPromptInput
+} from "./workflow/prompt-builder.js";
 export type {
   PreparedIssueWorkspace,
   PrepareIssueWorkspaceDependencies,

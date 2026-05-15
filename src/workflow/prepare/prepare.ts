@@ -15,10 +15,10 @@ import {
   writePrepareArtifacts
 } from "./artifact-writer.js";
 import {
-  renderPreparePrompt,
-  type PreparePromptVariant,
-  type RenderPreparePromptInput
-} from "./prompt-builder.js";
+  renderImplementPrompt,
+  type ImplementPromptVariant,
+  type RenderImplementPromptInput
+} from "../prompt-builder.js";
 import {
   prepareIssueWorkspace,
   type PrepareIssueWorkspaceDependencies,
@@ -28,8 +28,8 @@ import {
 
 export interface PrepareWorkflowSettings {
   baseRef?: string;
-  promptVariant?: PreparePromptVariant;
-  variant?: PreparePromptVariant;
+  promptVariant?: ImplementPromptVariant;
+  variant?: ImplementPromptVariant;
   promptsDirectory?: string;
   runsDirectory?: string;
 }
@@ -48,7 +48,7 @@ export type PrepareWorkspaceFunction = (
 ) => Promise<PrepareIssueWorkspaceResult>;
 
 export type PreparePromptRenderer = (
-  input: RenderPreparePromptInput
+  input: RenderImplementPromptInput
 ) => Promise<string>;
 
 export type PrepareArtifactWriter = (
@@ -158,7 +158,7 @@ export async function runPrepareWorkflow(
     return failureFromAutomationError("workspace_prep", headResult.error);
   }
 
-  const renderPrompt = dependencies.renderPrompt ?? renderPreparePrompt;
+  const renderPrompt = dependencies.renderPrompt ?? renderImplementPrompt;
   let prompt;
   try {
     prompt = await renderPrompt({
