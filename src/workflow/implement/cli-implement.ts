@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { IssueDetails } from "../../github/types.js";
+import { renderFeedbackPrompt } from "../prompt-builder.js";
 import {
   runImplementIssueWorkflow,
   type ImplementIssueWorkflowDependencies,
@@ -13,6 +15,7 @@ import {
 export interface ImplementCliOptions {
   issueNumber: number;
   runsDirectory?: string;
+  feedback?: string;
 }
 
 export type ImplementCliParseResult =
@@ -37,7 +40,7 @@ export interface RunImplementCliOptions {
   workflowDependencies?: ImplementIssueWorkflowDependencies;
 }
 
-const valueFlags = new Set(["--issue", "--runs-dir"]);
+const valueFlags = new Set(["--issue", "--runs-dir", "--feedback"]);
 
 export function formatImplementUsage(): string {
   return [
@@ -46,7 +49,8 @@ export function formatImplementUsage(): string {
     "",
     "Options:",
     "  --issue <number>       GitHub issue number to implement.",
-    "  --runs-dir <path>      Directory for implement run artifacts."
+    "  --runs-dir <path>      Directory for implement run artifacts.",
+    "  --feedback <text>      Feedback text for an implement rerun."
   ].join("\n");
 }
 
@@ -55,6 +59,7 @@ export function parseImplementCliArgs(
 ): ImplementCliParseResult {
   let issueNumber: number | undefined;
   let runsDirectory: string | undefined;
+  let feedback: string | undefined;
   const seenFlags = new Set<string>();
 
   for (let index = 0; index < args.length; index += 1) {
@@ -67,7 +72,12 @@ export function parseImplementCliArgs(
       seenFlags.add(arg);
 
       const value = args[index + 1];
-      if (value === undefined || value.startsWith("--") || value === "") {
+      if (
+        value === undefined ||
+        value.startsWith("--") ||
+        value === "" ||
+        (arg === "--feedback" && value.trim() === "")
+      ) {
         return usageFailure(`${arg} requires a value.`);
       }
 
@@ -77,6 +87,8 @@ export function parseImplementCliArgs(
           return usageFailure("--issue must be a positive integer.");
         }
         issueNumber = parsed;
+      } else if (arg === "--feedback") {
+        feedback = value;
       } else {
         runsDirectory = value;
       }
@@ -100,7 +112,8 @@ export function parseImplementCliArgs(
     ok: true,
     value: {
       issueNumber,
-      ...(runsDirectory !== undefined ? { runsDirectory } : {})
+      ...(runsDirectory !== undefined ? { runsDirectory } : {}),
+      ...(feedback !== undefined ? { feedback } : {})
     }
   };
 }
@@ -168,9 +181,25 @@ async function deriveImplementWorkflowOptions(
 ): Promise<ImplementIssueWorkflowOptions> {
   const runsDirectory = options.runsDirectory ?? ".runs";
   const runDirectory = join(runsDirectory, `issue-${options.issueNumber}`);
-  const promptPath = join(runDirectory, "prompt.md");
+  const promptPath = join(
+    runDirectory,
+    options.feedback === undefined ? "prompt.md" : "feedback-prompt.md"
+  );
   const runPath = join(runDirectory, "run.json");
   const run = await loadRunArtifact(runPath);
+
+  if (options.feedback !== undefined) {
+    const issuePath = join(runDirectory, "issue.json");
+    const releasePath = join(runDirectory, "release.json");
+    const issue = await loadIssueArtifact(issuePath, options.issueNumber);
+    const releaseJson = await loadRawArtifact(releasePath, "release artifact");
+    const prompt = await renderFeedbackPrompt({
+      issue,
+      feedback: options.feedback,
+      releaseJson
+    });
+    await writeFile(promptPath, prompt, "utf8");
+  }
 
   return {
     issueNumber: options.issueNumber,
@@ -233,9 +262,102 @@ async function loadRunArtifact(runPath: string): Promise<{
   return { worktreePath, beforeHead };
 }
 
+async function loadIssueArtifact(
+  issuePath: string,
+  expectedIssueNumber: number
+): Promise<IssueDetails> {
+  const content = await loadRawArtifact(issuePath, "issue artifact");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (cause) {
+    throw new Error(
+      `Invalid issue artifact JSON at ${issuePath}: ${messageFromUnknown(cause)}`
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Issue artifact must be a JSON object: ${issuePath}.`);
+  }
+
+  const number = getNumberProperty(parsed, "number");
+  if (number === undefined) {
+    throw new Error(
+      `Issue artifact is missing required positive integer number: ${issuePath}.`
+    );
+  }
+
+  if (number !== expectedIssueNumber) {
+    throw new Error(
+      `Issue artifact number ${number} does not match requested issue ${expectedIssueNumber}: ${issuePath}.`
+    );
+  }
+
+  const title = getStringProperty(parsed, "title");
+  if (title === undefined) {
+    throw new Error(
+      `Issue artifact is missing required string title: ${issuePath}.`
+    );
+  }
+
+  const body = getStringProperty(parsed, "body", { allowEmpty: true });
+  if (body === undefined) {
+    throw new Error(
+      `Issue artifact is missing required string body: ${issuePath}.`
+    );
+  }
+
+  return {
+    issueNumber: number,
+    title,
+    body,
+    state: "open",
+    url: ""
+  };
+}
+
+async function loadRawArtifact(
+  artifactPath: string,
+  artifactName: string
+): Promise<string> {
+  try {
+    return await readFile(artifactPath, "utf8");
+  } catch (cause) {
+    const code =
+      typeof cause === "object" && cause !== null && "code" in cause
+        ? cause.code
+        : undefined;
+    if (code === "ENOENT") {
+      throw new Error(`Implement ${artifactName} not found: ${artifactPath}.`);
+    }
+    throw new Error(
+      `Unable to read implement ${artifactName} at ${artifactPath}: ${messageFromUnknown(cause)}`
+    );
+  }
+}
+
+function getNumberProperty(
+  value: object,
+  propertyName: "number"
+): number | undefined {
+  const record = value as Record<string, unknown>;
+  if (!(propertyName in record)) {
+    return undefined;
+  }
+
+  const propertyValue = record[propertyName];
+  return typeof propertyValue === "number" &&
+    Number.isSafeInteger(propertyValue) &&
+    propertyValue > 0
+    ? propertyValue
+    : undefined;
+}
+
 function getStringProperty(
   value: object,
-  propertyName: "worktreePath" | "beforeHead"
+  propertyName: "worktreePath" | "beforeHead" | "title" | "body",
+  options: { allowEmpty?: boolean } = {}
 ): string | undefined {
   const record = value as Record<string, unknown>;
   if (!(propertyName in record)) {
@@ -243,7 +365,8 @@ function getStringProperty(
   }
 
   const propertyValue = record[propertyName];
-  return typeof propertyValue === "string" && propertyValue.trim() !== ""
+  return typeof propertyValue === "string" &&
+    (options.allowEmpty === true || propertyValue.trim() !== "")
     ? propertyValue
     : undefined;
 }
