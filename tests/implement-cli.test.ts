@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -79,13 +79,16 @@ test("implement CLI parses required and optional implement options", () => {
     "--issue",
     "73",
     "--runs-dir",
-    "custom-runs"
+    "custom-runs",
+    "--feedback",
+    "Address review feedback."
   ]);
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.ok && result.value, {
     issueNumber: 73,
-    runsDirectory: "custom-runs"
+    runsDirectory: "custom-runs",
+    feedback: "Address review feedback."
   });
 });
 
@@ -113,7 +116,26 @@ test("implement CLI rejects duplicate flags, missing values, unknown options, an
     "--issue",
     "74"
   ]);
+  const duplicateFeedback = parseImplementCliArgs([
+    "--issue",
+    "73",
+    "--feedback",
+    "first",
+    "--feedback",
+    "second"
+  ]);
   const missingValue = parseImplementCliArgs(["--issue"]);
+  const missingFeedbackValue = parseImplementCliArgs([
+    "--issue",
+    "73",
+    "--feedback"
+  ]);
+  const emptyFeedbackValue = parseImplementCliArgs([
+    "--issue",
+    "73",
+    "--feedback",
+    ""
+  ]);
   const unknown = parseImplementCliArgs([
     "--issue",
     "73",
@@ -128,8 +150,23 @@ test("implement CLI rejects duplicate flags, missing values, unknown options, an
 
   assert.equal(duplicate.ok, false);
   assert.match(!duplicate.ok ? duplicate.message : "", /--issue may only/);
+  assert.equal(duplicateFeedback.ok, false);
+  assert.match(
+    !duplicateFeedback.ok ? duplicateFeedback.message : "",
+    /--feedback may only/
+  );
   assert.equal(missingValue.ok, false);
   assert.match(!missingValue.ok ? missingValue.message : "", /requires a value/);
+  assert.equal(missingFeedbackValue.ok, false);
+  assert.match(
+    !missingFeedbackValue.ok ? missingFeedbackValue.message : "",
+    /--feedback requires a value/
+  );
+  assert.equal(emptyFeedbackValue.ok, false);
+  assert.match(
+    !emptyFeedbackValue.ok ? emptyFeedbackValue.message : "",
+    /--feedback requires a value/
+  );
   assert.equal(unknown.ok, false);
   assert.match(!unknown.ok ? unknown.message : "", /Unknown option: --prompt/);
   assert.equal(positional.ok, false);
@@ -137,6 +174,73 @@ test("implement CLI rejects duplicate flags, missing values, unknown options, an
     !positional.ok ? positional.message : "",
     /Unexpected positional argument/
   );
+});
+
+test("implement CLI feedback mode writes prompt and forwards feedback prompt path", async () => {
+  let capturedOptions: ImplementIssueWorkflowOptions | undefined;
+  const runsDirectory = await createFeedbackArtifacts();
+
+  const exitCode = await runImplementCli(
+    [
+      "--issue",
+      "73",
+      "--runs-dir",
+      runsDirectory,
+      "--feedback",
+      "Keep the existing tests and update the parser."
+    ],
+    {
+      stdout: () => undefined,
+      runImplementIssueWorkflow: async (options) => {
+        capturedOptions = options;
+        return successResult;
+      }
+    }
+  );
+
+  const promptPath = join(runsDirectory, "issue-73", "feedback-prompt.md");
+  const prompt = await readFile(promptPath, "utf8");
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(capturedOptions, {
+    issueNumber: 73,
+    promptPath,
+    targetWorktreePath: "C:/repos/worktrees/issue-73",
+    beforeHead: "abc123before",
+    runsDirectory
+  });
+  assert.match(prompt, /GitHub issue #73/);
+  assert.match(prompt, /Local feedback issue title/);
+  assert.match(prompt, /Local feedback issue body\./);
+  assert.match(prompt, /Keep the existing tests and update the parser\./);
+  assert.match(prompt, /"commit_message": "Existing release"/);
+});
+
+test("implement CLI feedback mode overwrites an existing feedback prompt", async () => {
+  const runsDirectory = await createFeedbackArtifacts();
+  const promptPath = join(runsDirectory, "issue-73", "feedback-prompt.md");
+  await writeFile(promptPath, "stale feedback prompt", "utf8");
+
+  const exitCode = await runImplementCli(
+    [
+      "--issue",
+      "73",
+      "--runs-dir",
+      runsDirectory,
+      "--feedback",
+      "Replace the previous rerun prompt."
+    ],
+    {
+      stdout: () => undefined,
+      runImplementIssueWorkflow: async () => successResult
+    }
+  );
+
+  const prompt = await readFile(promptPath, "utf8");
+
+  assert.equal(exitCode, 0);
+  assert.doesNotMatch(prompt, /stale feedback prompt/);
+  assert.match(prompt, /Replace the previous rerun prompt\./);
 });
 
 test("implement CLI runner returns usage failure before invoking workflow", async () => {
@@ -270,6 +374,153 @@ test("implement CLI runner fails before workflow when run artifact is missing or
   }
 });
 
+test("implement CLI feedback mode fails before workflow when local issue artifact is missing or invalid", async () => {
+  const cases = [
+    {
+      name: "missing",
+      setup: async () => createFeedbackArtifacts(73, undefined, null),
+      expected: /Implement issue artifact not found/
+    },
+    {
+      name: "invalid json",
+      setup: async () => createFeedbackArtifacts(73, undefined, "{"),
+      expected: /Invalid issue artifact JSON/
+    },
+    {
+      name: "missing number",
+      setup: async () =>
+        createFeedbackArtifacts(
+          73,
+          undefined,
+          JSON.stringify({ title: "Missing number", body: "Body" })
+        ),
+      expected: /missing required positive integer number/
+    },
+    {
+      name: "mismatched number",
+      setup: async () =>
+        createFeedbackArtifacts(
+          73,
+          undefined,
+          JSON.stringify({ number: 74, title: "Wrong issue", body: "Body" })
+        ),
+      expected: /does not match requested issue/
+    },
+    {
+      name: "missing title",
+      setup: async () =>
+        createFeedbackArtifacts(
+          73,
+          undefined,
+          JSON.stringify({ number: 73, body: "Body" })
+        ),
+      expected: /missing required string title/
+    },
+    {
+      name: "missing body",
+      setup: async () =>
+        createFeedbackArtifacts(
+          73,
+          undefined,
+          JSON.stringify({ number: 73, title: "Missing body" })
+        ),
+      expected: /missing required string body/
+    }
+  ];
+
+  for (const issueArtifactCase of cases) {
+    let invoked = false;
+    const stderr: string[] = [];
+    const runsDirectory = await issueArtifactCase.setup();
+
+    const exitCode = await runImplementCli(
+      [
+        "--issue",
+        "73",
+        "--runs-dir",
+        runsDirectory,
+        "--feedback",
+        "Retry implementation."
+      ],
+      {
+        stderr: (message) => stderr.push(message),
+        runImplementIssueWorkflow: async () => {
+          invoked = true;
+          return successResult;
+        }
+      }
+    );
+
+    assert.equal(exitCode, 1, issueArtifactCase.name);
+    assert.equal(invoked, false, issueArtifactCase.name);
+    assert.match(stderr.join("\n"), issueArtifactCase.expected);
+    assert.match(stderr.join("\n"), /issue-73[\\/]+issue\.json/);
+  }
+});
+
+test("implement CLI feedback mode fails before workflow when release artifact is missing", async () => {
+  let invoked = false;
+  const stderr: string[] = [];
+  const runsDirectory = await createFeedbackArtifacts(
+    73,
+    undefined,
+    undefined,
+    null
+  );
+
+  const exitCode = await runImplementCli(
+    [
+      "--issue",
+      "73",
+      "--runs-dir",
+      runsDirectory,
+      "--feedback",
+      "Retry implementation."
+    ],
+    {
+      stderr: (message) => stderr.push(message),
+      runImplementIssueWorkflow: async () => {
+        invoked = true;
+        return successResult;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(invoked, false);
+  assert.match(stderr.join("\n"), /Implement release artifact not found/);
+  assert.match(stderr.join("\n"), /issue-73[\\/]+release\.json/);
+});
+
+test("implement CLI feedback mode uses existing run artifact validation", async () => {
+  let invoked = false;
+  const stderr: string[] = [];
+  const runsDirectory = await createFeedbackArtifacts(73, "{");
+
+  const exitCode = await runImplementCli(
+    [
+      "--issue",
+      "73",
+      "--runs-dir",
+      runsDirectory,
+      "--feedback",
+      "Retry implementation."
+    ],
+    {
+      stderr: (message) => stderr.push(message),
+      runImplementIssueWorkflow: async () => {
+        invoked = true;
+        return successResult;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(invoked, false);
+  assert.match(stderr.join("\n"), /Invalid implement run artifact JSON/);
+  assert.match(stderr.join("\n"), /issue-73[\\/]+run\.json/);
+});
+
 test("implement CLI runner prints concise success output", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
@@ -341,4 +592,42 @@ async function createRunArtifact(
   await mkdir(runDirectory, { recursive: true });
   await writeFile(join(runDirectory, "run.json"), content, "utf8");
   return artifactRunsDirectory;
+}
+
+async function createFeedbackArtifacts(
+  issueNumber = 73,
+  runContent = JSON.stringify({
+    worktreePath: "C:/repos/worktrees/issue-73",
+    beforeHead: "abc123before"
+  }),
+  issueContent: string | null | undefined = JSON.stringify({
+    number: 73,
+    title: "Local feedback issue title",
+    body: "Local feedback issue body."
+  }),
+  releaseContent: string | null | undefined = JSON.stringify(
+    {
+      commit_message: "Existing release",
+      pull_request: {
+        title: "Existing release",
+        summary: "Existing summary.",
+        scope: ["Existing scope."],
+        verification: ["Existing verification."]
+      }
+    },
+    null,
+    2
+  )
+): Promise<string> {
+  const runsDirectory = await mkdtemp(join(tmpdir(), "implement-cli-feedback-"));
+  const runDirectory = join(runsDirectory, `issue-${issueNumber}`);
+  await mkdir(runDirectory, { recursive: true });
+  await writeFile(join(runDirectory, "run.json"), runContent, "utf8");
+  if (issueContent !== null) {
+    await writeFile(join(runDirectory, "issue.json"), issueContent, "utf8");
+  }
+  if (releaseContent !== null) {
+    await writeFile(join(runDirectory, "release.json"), releaseContent, "utf8");
+  }
+  return runsDirectory;
 }
