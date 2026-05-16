@@ -10,9 +10,19 @@ import type {
 import type { GitAutomationClient } from "../../git/client.js";
 import type { GitAutomationError } from "../../git/types.js";
 import {
-  type PrepareArtifactWriterInput,
   type PrepareArtifactWriterResult,
-  writePrepareArtifacts
+  type UpdateRunArtifactInput,
+  type UpdateRunArtifactResult,
+  type WriteIssueArtifactInput,
+  type WriteIssueArtifactResult,
+  type WritePromptArtifactInput,
+  type WritePromptArtifactResult,
+  type WriteRunArtifactInput,
+  type WriteRunArtifactResult,
+  updateRunArtifact,
+  writeIssueArtifact,
+  writePromptArtifact,
+  writeRunArtifact
 } from "./artifact-writer.js";
 import {
   renderImplementPrompt,
@@ -51,9 +61,21 @@ export type PreparePromptRenderer = (
   input: RenderImplementPromptInput
 ) => Promise<string>;
 
-export type PrepareArtifactWriter = (
-  input: PrepareArtifactWriterInput
-) => Promise<PrepareArtifactWriterResult>;
+export type PrepareIssueArtifactWriter = (
+  input: WriteIssueArtifactInput
+) => Promise<WriteIssueArtifactResult>;
+
+export type PreparePromptArtifactWriter = (
+  input: WritePromptArtifactInput
+) => Promise<WritePromptArtifactResult>;
+
+export type PrepareRunArtifactWriter = (
+  input: WriteRunArtifactInput
+) => Promise<WriteRunArtifactResult>;
+
+export type PrepareRunArtifactUpdater = (
+  input: UpdateRunArtifactInput
+) => Promise<UpdateRunArtifactResult>;
 
 export interface PrepareWorkflowDependencies {
   githubClient?: GitHubAutomationClient;
@@ -61,7 +83,10 @@ export interface PrepareWorkflowDependencies {
   gitClient?: GitAutomationClient;
   prepareWorkspace?: PrepareWorkspaceFunction;
   renderPrompt?: PreparePromptRenderer;
-  writeArtifacts?: PrepareArtifactWriter;
+  writeIssueArtifact?: PrepareIssueArtifactWriter;
+  writePromptArtifact?: PreparePromptArtifactWriter;
+  writeRunArtifact?: PrepareRunArtifactWriter;
+  updateRunArtifact?: PrepareRunArtifactUpdater;
 }
 
 export type PrepareWorkflowFailureStage =
@@ -107,6 +132,23 @@ export async function runPrepareWorkflow(
     dependencies.githubClient ??
     dependencies.createGitHubClient?.() ??
     new GhGitHubAutomationClient();
+  const runArtifactWriter = dependencies.writeRunArtifact ?? writeRunArtifact;
+  const runArtifactUpdater = dependencies.updateRunArtifact ?? updateRunArtifact;
+  const issueArtifactWriter =
+    dependencies.writeIssueArtifact ?? writeIssueArtifact;
+  const promptArtifactWriter =
+    dependencies.writePromptArtifact ?? writePromptArtifact;
+
+  try {
+    await runArtifactWriter({
+      issueNumber: options.issueNumber,
+      ...(settings.runsDirectory !== undefined
+        ? { runsDirectory: settings.runsDirectory }
+        : {})
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
 
   let issueResult;
   try {
@@ -123,6 +165,54 @@ export async function runPrepareWorkflow(
   }
 
   const issue = issueResult.value;
+  let issueArtifact: WriteIssueArtifactResult;
+  try {
+    issueArtifact = await issueArtifactWriter({
+      issue,
+      ...(settings.runsDirectory !== undefined
+        ? { runsDirectory: settings.runsDirectory }
+        : {})
+    });
+    await runArtifactUpdater({
+      issueNumber: issue.issueNumber,
+      issue,
+      ...(settings.runsDirectory !== undefined
+        ? { runsDirectory: settings.runsDirectory }
+        : {})
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
+  const renderPrompt = dependencies.renderPrompt ?? renderImplementPrompt;
+  let prompt: string;
+  try {
+    prompt = await renderPrompt({
+      issue,
+      ...(settings.promptVariant !== undefined
+        ? { variant: settings.promptVariant }
+        : {}),
+      ...(settings.promptsDirectory !== undefined
+        ? { promptsDirectory: settings.promptsDirectory }
+        : {})
+    });
+  } catch (cause) {
+    return failureFromThrown("prompt_render", cause);
+  }
+
+  let promptArtifact: WritePromptArtifactResult;
+  try {
+    promptArtifact = await promptArtifactWriter({
+      issueNumber: issue.issueNumber,
+      prompt,
+      ...(settings.runsDirectory !== undefined
+        ? { runsDirectory: settings.runsDirectory }
+        : {})
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
   const prepareWorkspace = dependencies.prepareWorkspace ?? prepareIssueWorkspace;
   let workspaceResult;
@@ -145,6 +235,19 @@ export async function runPrepareWorkflow(
     return failureFromAutomationError("workspace_prep", workspaceResult.error);
   }
 
+  try {
+    await runArtifactUpdater({
+      issueNumber: issue.issueNumber,
+      worktreePath: workspaceResult.value.targetWorktreePath,
+      branchName: workspaceResult.value.branchName,
+      ...(settings.runsDirectory !== undefined
+        ? { runsDirectory: settings.runsDirectory }
+        : {})
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   let headResult;
   try {
     headResult = await gitClient.getHead({
@@ -158,31 +261,12 @@ export async function runPrepareWorkflow(
     return failureFromAutomationError("workspace_prep", headResult.error);
   }
 
-  const renderPrompt = dependencies.renderPrompt ?? renderImplementPrompt;
-  let prompt;
+  let preparedRunArtifact: UpdateRunArtifactResult;
   try {
-    prompt = await renderPrompt({
-      issue,
-      ...(settings.promptVariant !== undefined
-        ? { variant: settings.promptVariant }
-        : {}),
-      ...(settings.promptsDirectory !== undefined
-        ? { promptsDirectory: settings.promptsDirectory }
-        : {})
-    });
-  } catch (cause) {
-    return failureFromThrown("prompt_render", cause);
-  }
-
-  const writeArtifacts = dependencies.writeArtifacts ?? writePrepareArtifacts;
-  let artifacts;
-  try {
-    artifacts = await writeArtifacts({
-      issue,
-      prompt,
-      branchName: workspaceResult.value.branchName,
-      worktreePath: workspaceResult.value.targetWorktreePath,
+    preparedRunArtifact = await runArtifactUpdater({
+      issueNumber: issue.issueNumber,
       beforeHead: headResult.value.head,
+      status: "prepared",
       ...(settings.runsDirectory !== undefined
         ? { runsDirectory: settings.runsDirectory }
         : {})
@@ -190,6 +274,15 @@ export async function runPrepareWorkflow(
   } catch (cause) {
     return failureFromThrown("artifact_write", cause);
   }
+
+  const artifacts: PrepareArtifactWriterResult = {
+    runDirectory: preparedRunArtifact.runDirectory,
+    promptPath: promptArtifact.promptPath,
+    issuePath: issueArtifact.issuePath,
+    runPath: preparedRunArtifact.runPath,
+    issue: issueArtifact.issue,
+    run: preparedRunArtifact.run
+  };
 
   return {
     ok: true,
