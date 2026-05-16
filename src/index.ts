@@ -20,7 +20,11 @@ export {
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
 export {
-  writeImplementArtifacts
+  getImplementArtifactPaths,
+  updateRunArtifact,
+  writeDiffArtifact,
+  writeReleaseArtifact,
+  writeVerificationArtifact
 } from "./workflow/implement/artifact-writer.js";
 export {
   loadReleaseRunArtifact,
@@ -113,13 +117,20 @@ export type {
   ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
 export type {
-  ImplementArtifactWriterInput,
+  ImplementArtifactPathInput,
+  ImplementArtifactPaths,
   ImplementArtifactWriterResult,
   ImplementRunArtifact,
   ImplementRunArtifactUpdate,
   ImplementRunStatus,
-  WriteImplementArtifactsInput,
-  WriteImplementArtifactsResult
+  UpdateRunArtifactInput,
+  UpdateRunArtifactResult,
+  WriteDiffArtifactInput,
+  WriteDiffArtifactResult,
+  WriteReleaseArtifactInput,
+  WriteReleaseArtifactResult,
+  WriteVerificationArtifactInput,
+  WriteVerificationArtifactResult
 } from "./workflow/implement/artifact-writer.js";
 export type {
   PublishedRunInput,
@@ -171,7 +182,7 @@ export type {
 } from "./workflow/implement/agent-orchestrator.js";
 export type {
   ImplementAgentWorkflow,
-  ImplementArtifactWriter,
+  ImplementDiffArtifactWriter,
   ImplementIssueWorkflowDependencies,
   ImplementIssueWorkflowError,
   ImplementIssueWorkflowFailureStage,
@@ -179,6 +190,9 @@ export type {
   ImplementIssueWorkflowResult,
   ImplementIssueWorkflowSettings,
   ImplementIssueWorkflowSuccess,
+  ImplementReleaseArtifactWriter,
+  ImplementRunArtifactWriter,
+  ImplementVerificationArtifactWriter,
   ImplementVerificationRunner
 } from "./workflow/implement/implement.js";
 export type {

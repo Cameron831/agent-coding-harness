@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ImplementorReleaseMetadata } from "../../parser/release.js";
 
-export type ImplementRunStatus = "needsFeedback";
+export type ImplementRunStatus = "implementing" | "needsFeedback";
 
 export interface ImplementRunArtifactUpdate {
   status: ImplementRunStatus;
@@ -12,26 +12,66 @@ export type ImplementRunArtifact = Record<string, unknown> & {
   status: ImplementRunStatus;
 };
 
-export interface WriteImplementArtifactsInput {
+export interface ImplementArtifactPathInput {
   issueNumber: number;
-  /**
-   * Written exactly as supplied, without newline normalization or trailing
-   * newline insertion.
-   */
-  diff: string;
+  runsDirectory?: string;
+}
+
+export interface WriteReleaseArtifactInput extends ImplementArtifactPathInput {
+  release: ImplementorReleaseMetadata;
+}
+
+export interface WriteVerificationArtifactInput extends ImplementArtifactPathInput {
   /**
    * Written exactly as supplied, without newline normalization or trailing
    * newline insertion.
    */
   verificationOutput: string;
-  release: ImplementorReleaseMetadata;
-  runsDirectory?: string;
+}
+
+export interface WriteDiffArtifactInput extends ImplementArtifactPathInput {
+  /**
+   * Written exactly as supplied, without newline normalization or trailing
+   * newline insertion.
+   */
+  diff: string;
+}
+
+export interface UpdateRunArtifactInput extends ImplementArtifactPathInput {
   status?: ImplementRunStatus;
 }
 
-export type ImplementArtifactWriterInput = WriteImplementArtifactsInput;
+export interface ImplementArtifactPaths {
+  runDirectory: string;
+  diffPath: string;
+  verificationOutputPath: string;
+  releasePath: string;
+  runPath: string;
+}
 
-export interface WriteImplementArtifactsResult {
+export interface WriteReleaseArtifactResult {
+  runDirectory: string;
+  releasePath: string;
+  release: ImplementorReleaseMetadata;
+}
+
+export interface WriteVerificationArtifactResult {
+  runDirectory: string;
+  verificationOutputPath: string;
+}
+
+export interface WriteDiffArtifactResult {
+  runDirectory: string;
+  diffPath: string;
+}
+
+export interface UpdateRunArtifactResult {
+  runDirectory: string;
+  runPath: string;
+  run: ImplementRunArtifact;
+}
+
+export interface ImplementArtifactWriterResult {
   runDirectory: string;
   diffPath: string;
   verificationOutputPath: string;
@@ -41,21 +81,57 @@ export interface WriteImplementArtifactsResult {
   run: ImplementRunArtifact;
 }
 
-export type ImplementArtifactWriterResult = WriteImplementArtifactsResult;
+export async function writeReleaseArtifact(
+  input: WriteReleaseArtifactInput
+): Promise<WriteReleaseArtifactResult> {
+  const paths = getImplementArtifactPaths(input);
 
-export async function writeImplementArtifacts(
-  input: WriteImplementArtifactsInput
-): Promise<WriteImplementArtifactsResult> {
-  const runsDirectory = input.runsDirectory ?? ".runs";
-  const runDirectory = join(runsDirectory, `issue-${input.issueNumber}`);
-  const diffPath = join(runDirectory, "diff.patch");
-  const verificationOutputPath = join(runDirectory, "verification.txt");
-  const releasePath = join(runDirectory, "release.json");
-  const runPath = join(runDirectory, "run.json");
+  await mkdir(paths.runDirectory, { recursive: true });
+  await writeFile(paths.releasePath, formatJson(input.release), "utf8");
 
-  await mkdir(runDirectory, { recursive: true });
+  return {
+    runDirectory: paths.runDirectory,
+    releasePath: paths.releasePath,
+    release: input.release
+  };
+}
 
-  const existingRun = await loadExistingRunArtifact(runPath);
+export async function writeVerificationArtifact(
+  input: WriteVerificationArtifactInput
+): Promise<WriteVerificationArtifactResult> {
+  const paths = getImplementArtifactPaths(input);
+
+  await mkdir(paths.runDirectory, { recursive: true });
+  await writeFile(paths.verificationOutputPath, input.verificationOutput, "utf8");
+
+  return {
+    runDirectory: paths.runDirectory,
+    verificationOutputPath: paths.verificationOutputPath
+  };
+}
+
+export async function writeDiffArtifact(
+  input: WriteDiffArtifactInput
+): Promise<WriteDiffArtifactResult> {
+  const paths = getImplementArtifactPaths(input);
+
+  await mkdir(paths.runDirectory, { recursive: true });
+  await writeFile(paths.diffPath, input.diff, "utf8");
+
+  return {
+    runDirectory: paths.runDirectory,
+    diffPath: paths.diffPath
+  };
+}
+
+export async function updateRunArtifact(
+  input: UpdateRunArtifactInput
+): Promise<UpdateRunArtifactResult> {
+  const paths = getImplementArtifactPaths(input);
+
+  await mkdir(paths.runDirectory, { recursive: true });
+
+  const existingRun = await loadExistingRunArtifact(paths.runPath);
   const runUpdate: ImplementRunArtifactUpdate = {
     status: input.status ?? "needsFeedback"
   };
@@ -64,19 +140,27 @@ export async function writeImplementArtifacts(
     ...runUpdate
   };
 
-  await writeFile(diffPath, input.diff, "utf8");
-  await writeFile(verificationOutputPath, input.verificationOutput, "utf8");
-  await writeFile(releasePath, formatJson(input.release), "utf8");
-  await writeFile(runPath, formatJson(run), "utf8");
+  await writeFile(paths.runPath, formatJson(run), "utf8");
+
+  return {
+    runDirectory: paths.runDirectory,
+    runPath: paths.runPath,
+    run
+  };
+}
+
+export function getImplementArtifactPaths(
+  input: ImplementArtifactPathInput
+): ImplementArtifactPaths {
+  const runsDirectory = input.runsDirectory ?? ".runs";
+  const runDirectory = join(runsDirectory, `issue-${input.issueNumber}`);
 
   return {
     runDirectory,
-    diffPath,
-    verificationOutputPath,
-    releasePath,
-    runPath,
-    release: input.release,
-    run
+    diffPath: join(runDirectory, "diff.patch"),
+    verificationOutputPath: join(runDirectory, "verification.txt"),
+    releasePath: join(runDirectory, "release.json"),
+    runPath: join(runDirectory, "run.json")
   };
 }
 
