@@ -12,9 +12,19 @@ import {
   type ImplementWorkflowResult
 } from "./agent-orchestrator.js";
 import {
-  type ImplementArtifactWriterInput,
   type ImplementArtifactWriterResult,
-  writeImplementArtifacts
+  type UpdateRunArtifactInput,
+  type UpdateRunArtifactResult,
+  type WriteDiffArtifactInput,
+  type WriteDiffArtifactResult,
+  type WriteReleaseArtifactInput,
+  type WriteReleaseArtifactResult,
+  type WriteVerificationArtifactInput,
+  type WriteVerificationArtifactResult,
+  updateRunArtifact as defaultUpdateRunArtifact,
+  writeDiffArtifact as defaultWriteDiffArtifact,
+  writeReleaseArtifact as defaultWriteReleaseArtifact,
+  writeVerificationArtifact as defaultWriteVerificationArtifact
 } from "./artifact-writer.js";
 import {
   runImplementVerification,
@@ -45,15 +55,30 @@ export type ImplementVerificationRunner = (
   input: ImplementVerificationInput
 ) => Promise<ImplementVerificationResult>;
 
-export type ImplementArtifactWriter = (
-  input: ImplementArtifactWriterInput
-) => Promise<ImplementArtifactWriterResult>;
+export type ImplementReleaseArtifactWriter = (
+  input: WriteReleaseArtifactInput
+) => Promise<WriteReleaseArtifactResult>;
+
+export type ImplementVerificationArtifactWriter = (
+  input: WriteVerificationArtifactInput
+) => Promise<WriteVerificationArtifactResult>;
+
+export type ImplementDiffArtifactWriter = (
+  input: WriteDiffArtifactInput
+) => Promise<WriteDiffArtifactResult>;
+
+export type ImplementRunArtifactWriter = (
+  input: UpdateRunArtifactInput
+) => Promise<UpdateRunArtifactResult>;
 
 export interface ImplementIssueWorkflowDependencies {
   agentWorkflow?: ImplementAgentWorkflow;
   verificationRunner?: ImplementVerificationRunner;
   gitClient?: GitAutomationClient;
-  writeArtifacts?: ImplementArtifactWriter;
+  writeReleaseArtifact?: ImplementReleaseArtifactWriter;
+  writeVerificationArtifact?: ImplementVerificationArtifactWriter;
+  writeDiffArtifact?: ImplementDiffArtifactWriter;
+  updateRunArtifact?: ImplementRunArtifactWriter;
 }
 
 export type ImplementIssueWorkflowFailureStage =
@@ -91,6 +116,30 @@ export async function runImplementIssueWorkflow(
   dependencies: ImplementIssueWorkflowDependencies = {}
 ): Promise<ImplementIssueWorkflowResult> {
   const settings = resolveSettings(options);
+  const artifactPathInput = {
+    issueNumber: options.issueNumber,
+    ...(settings.runsDirectory !== undefined
+      ? { runsDirectory: settings.runsDirectory }
+      : {})
+  };
+  const writeRun =
+    dependencies.updateRunArtifact ?? defaultUpdateRunArtifact;
+  const writeRelease =
+    dependencies.writeReleaseArtifact ?? defaultWriteReleaseArtifact;
+  const writeVerification =
+    dependencies.writeVerificationArtifact ?? defaultWriteVerificationArtifact;
+  const writeDiff =
+    dependencies.writeDiffArtifact ?? defaultWriteDiffArtifact;
+
+  try {
+    await writeRun({
+      ...artifactPathInput,
+      status: "implementing"
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   const agentWorkflow = dependencies.agentWorkflow ?? runImplementWorkflow;
 
   let agentResult;
@@ -115,6 +164,16 @@ export async function runImplementIssueWorkflow(
     };
   }
 
+  let releaseArtifact;
+  try {
+    releaseArtifact = await writeRelease({
+      ...artifactPathInput,
+      release: agentResult.value.release
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   const verificationRunner =
     dependencies.verificationRunner ?? runImplementVerification;
   let verification;
@@ -131,6 +190,16 @@ export async function runImplementIssueWorkflow(
     return failureFromThrown("verification", cause);
   }
 
+  let verificationArtifact;
+  try {
+    verificationArtifact = await writeVerification({
+      ...artifactPathInput,
+      verificationOutput: verification.report
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
   let diffResult;
   try {
@@ -145,21 +214,35 @@ export async function runImplementIssueWorkflow(
     return failureFromGitError("diff", diffResult.error);
   }
 
-  const writeArtifacts = dependencies.writeArtifacts ?? writeImplementArtifacts;
-  let artifacts;
+  let diffArtifact;
   try {
-    artifacts = await writeArtifacts({
-      issueNumber: options.issueNumber,
-      diff: diffResult.value.diff,
-      verificationOutput: verification.report,
-      release: agentResult.value.release,
-      ...(settings.runsDirectory !== undefined
-        ? { runsDirectory: settings.runsDirectory }
-        : {})
+    diffArtifact = await writeDiff({
+      ...artifactPathInput,
+      diff: diffResult.value.diff
     });
   } catch (cause) {
     return failureFromThrown("artifact_write", cause);
   }
+
+  let runArtifact;
+  try {
+    runArtifact = await writeRun({
+      ...artifactPathInput,
+      status: "needsFeedback"
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
+  const artifacts: ImplementArtifactWriterResult = {
+    runDirectory: runArtifact.runDirectory,
+    diffPath: diffArtifact.diffPath,
+    verificationOutputPath: verificationArtifact.verificationOutputPath,
+    releasePath: releaseArtifact.releasePath,
+    runPath: runArtifact.runPath,
+    release: releaseArtifact.release,
+    run: runArtifact.run
+  };
 
   return {
     ok: true,

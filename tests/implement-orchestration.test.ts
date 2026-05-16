@@ -15,8 +15,8 @@ import {
   type GetHeadResult,
   type GitAutomationClient,
   type GitAutomationResult,
-  type ImplementArtifactWriterInput,
   type ImplementArtifactWriterResult,
+  type ImplementIssueWorkflowDependencies,
   type ImplementVerificationInput,
   type ImplementVerificationResult,
   type ImplementWorkflowOptions,
@@ -26,7 +26,15 @@ import {
   type PushBranchResult,
   type StageFilesInput,
   type StageFilesResult,
-  type WorktreeDetails
+  type WorktreeDetails,
+  type UpdateRunArtifactInput,
+  type UpdateRunArtifactResult,
+  type WriteDiffArtifactInput,
+  type WriteDiffArtifactResult,
+  type WriteReleaseArtifactInput,
+  type WriteReleaseArtifactResult,
+  type WriteVerificationArtifactInput,
+  type WriteVerificationArtifactResult
 } from "../src/index.js";
 
 const release: ImplementorReleaseMetadata = {
@@ -99,11 +107,14 @@ class FakeGitClient implements GitAutomationClient {
   }
 }
 
-test("implement issue workflow sequences agent, verification, diff, and artifact writing", async () => {
+test("implement issue workflow sequences individual artifact writes", async () => {
   const events: string[] = [];
   const agentInputs: ImplementWorkflowOptions[] = [];
   const verificationInputs: ImplementVerificationInput[] = [];
-  const artifactInputs: ImplementArtifactWriterInput[] = [];
+  const runInputs: UpdateRunArtifactInput[] = [];
+  const releaseInputs: WriteReleaseArtifactInput[] = [];
+  const verificationArtifactInputs: WriteVerificationArtifactInput[] = [];
+  const diffArtifactInputs: WriteDiffArtifactInput[] = [];
   const gitClient = new FakeGitClient(diffResult(), () => events.push("diff"));
 
   const result = await runImplementIssueWorkflow(
@@ -126,16 +137,40 @@ test("implement issue workflow sequences agent, verification, diff, and artifact
         return verificationResult({ status: "passed" });
       },
       gitClient,
-      writeArtifacts: async (input) => {
-        events.push("artifacts");
-        artifactInputs.push(input);
-        return artifactResult();
+      updateRunArtifact: async (input) => {
+        events.push(`run:${input.status}`);
+        runInputs.push(input);
+        return runArtifactResult(input);
+      },
+      writeReleaseArtifact: async (input) => {
+        events.push("release");
+        releaseInputs.push(input);
+        return releaseArtifactResult(input);
+      },
+      writeVerificationArtifact: async (input) => {
+        events.push("verificationArtifact");
+        verificationArtifactInputs.push(input);
+        return verificationArtifactResult(input);
+      },
+      writeDiffArtifact: async (input) => {
+        events.push("diffArtifact");
+        diffArtifactInputs.push(input);
+        return diffArtifactResult(input);
       }
     }
   );
 
   assert.equal(result.ok, true);
-  assert.deepEqual(events, ["agent", "verification", "diff", "artifacts"]);
+  assert.deepEqual(events, [
+    "run:implementing",
+    "agent",
+    "release",
+    "verification",
+    "verificationArtifact",
+    "diff",
+    "diffArtifact",
+    "run:needsFeedback"
+  ]);
   assert.deepEqual(agentInputs, [
     {
       promptPath: options.promptPath,
@@ -155,13 +190,37 @@ test("implement issue workflow sequences agent, verification, diff, and artifact
       targetWorktreePath: options.targetWorktreePath
     }
   ]);
-  assert.deepEqual(artifactInputs, [
+  assert.deepEqual(runInputs, [
     {
       issueNumber: options.issueNumber,
-      diff: "diff --git a/file.ts b/file.ts\n",
-      verificationOutput: "rendered verification report",
-      release,
-      runsDirectory: "custom-runs"
+      runsDirectory: "custom-runs",
+      status: "implementing"
+    },
+    {
+      issueNumber: options.issueNumber,
+      runsDirectory: "custom-runs",
+      status: "needsFeedback"
+    }
+  ]);
+  assert.deepEqual(releaseInputs, [
+    {
+      issueNumber: options.issueNumber,
+      runsDirectory: "custom-runs",
+      release
+    }
+  ]);
+  assert.deepEqual(verificationArtifactInputs, [
+    {
+      issueNumber: options.issueNumber,
+      runsDirectory: "custom-runs",
+      verificationOutput: "rendered verification report"
+    }
+  ]);
+  assert.deepEqual(diffArtifactInputs, [
+    {
+      issueNumber: options.issueNumber,
+      runsDirectory: "custom-runs",
+      diff: "diff --git a/file.ts b/file.ts\n"
     }
   ]);
 });
@@ -169,13 +228,12 @@ test("implement issue workflow sequences agent, verification, diff, and artifact
 test("implement issue workflow exposes release, verification, diff, and artifact outputs", async () => {
   const verification = verificationResult({ status: "passed" });
   const diff = diffResult().value;
-  const artifacts = artifactResult();
 
   const result = await runImplementIssueWorkflow(options, {
     agentWorkflow: async () => agentResult(),
     verificationRunner: async () => verification,
     gitClient: new FakeGitClient({ ok: true, value: diff }),
-    writeArtifacts: async () => artifacts
+    ...artifactWriters()
   });
 
   assert.deepEqual(result, {
@@ -184,33 +242,57 @@ test("implement issue workflow exposes release, verification, diff, and artifact
       release,
       verification,
       diff,
-      artifacts
+      artifacts: artifactResult()
     }
   });
 });
 
-test("implement issue workflow writes artifacts when verification status is failed", async () => {
-  let artifactsWritten = false;
+test("implement issue workflow writes verification artifact when verification status is failed", async () => {
+  let verificationArtifactWritten = false;
 
   const result = await runImplementIssueWorkflow(options, {
     agentWorkflow: async () => agentResult(),
     verificationRunner: async () => verificationResult({ status: "failed" }),
     gitClient: new FakeGitClient(diffResult()),
-    writeArtifacts: async () => {
-      artifactsWritten = true;
-      return artifactResult();
-    }
+    ...artifactWriters({
+      writeVerificationArtifact: async (input) => {
+        verificationArtifactWritten = true;
+        return verificationArtifactResult(input);
+      }
+    })
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.ok && result.value.verification.status, "failed");
-  assert.equal(artifactsWritten, true);
+  assert.equal(verificationArtifactWritten, true);
+});
+
+test("implement issue workflow stops when initial run artifact write fails", async () => {
+  let agentCalled = false;
+
+  const result = await runImplementIssueWorkflow(options, {
+    agentWorkflow: async () => {
+      agentCalled = true;
+      return agentResult();
+    },
+    gitClient: new FakeGitClient(diffResult()),
+    ...artifactWriters({
+      updateRunArtifact: async () => {
+        throw new Error("run state missing");
+      }
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.equal(result.ok || result.error.message, "run state missing");
+  assert.equal(agentCalled, false);
 });
 
 test("implement issue workflow stops when agent orchestration fails", async () => {
   let verificationCalled = false;
   let diffCalled = false;
-  let artifactsWritten = false;
+  let releaseWritten = false;
 
   const result = await runImplementIssueWorkflow(options, {
     agentWorkflow: async () => ({
@@ -227,10 +309,12 @@ test("implement issue workflow stops when agent orchestration fails", async () =
     gitClient: new FakeGitClient(diffResult(), () => {
       diffCalled = true;
     }),
-    writeArtifacts: async () => {
-      artifactsWritten = true;
-      return artifactResult();
-    }
+    ...artifactWriters({
+      writeReleaseArtifact: async (input) => {
+        releaseWritten = true;
+        return releaseArtifactResult(input);
+      }
+    })
   });
 
   assert.equal(result.ok, false);
@@ -238,11 +322,92 @@ test("implement issue workflow stops when agent orchestration fails", async () =
   assert.equal(result.ok || result.error.message, "codex failed");
   assert.equal(verificationCalled, false);
   assert.equal(diffCalled, false);
-  assert.equal(artifactsWritten, false);
+  assert.equal(releaseWritten, false);
 });
 
-test("implement issue workflow stops without artifact writing when diff retrieval fails", async () => {
-  let artifactsWritten = false;
+test("implement issue workflow stops when release artifact writing fails", async () => {
+  let verificationCalled = false;
+
+  const result = await runImplementIssueWorkflow(options, {
+    agentWorkflow: async () => agentResult(),
+    verificationRunner: async () => {
+      verificationCalled = true;
+      return verificationResult({ status: "passed" });
+    },
+    gitClient: new FakeGitClient(diffResult()),
+    ...artifactWriters({
+      writeReleaseArtifact: async () => {
+        throw new Error("release write failed");
+      }
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.equal(result.ok || result.error.message, "release write failed");
+  assert.equal(verificationCalled, false);
+});
+
+test("implement issue workflow leaves only pre-verification artifacts when verification throws", async () => {
+  const events: string[] = [];
+
+  const result = await runImplementIssueWorkflow(options, {
+    agentWorkflow: async () => agentResult(),
+    verificationRunner: async () => {
+      events.push("verification");
+      throw new Error("tests crashed");
+    },
+    gitClient: new FakeGitClient(diffResult(), () => events.push("diff")),
+    ...artifactWriters({
+      updateRunArtifact: async (input) => {
+        events.push(`run:${input.status}`);
+        return runArtifactResult(input);
+      },
+      writeReleaseArtifact: async (input) => {
+        events.push("release");
+        return releaseArtifactResult(input);
+      },
+      writeVerificationArtifact: async (input) => {
+        events.push("verificationArtifact");
+        return verificationArtifactResult(input);
+      },
+      writeDiffArtifact: async (input) => {
+        events.push("diffArtifact");
+        return diffArtifactResult(input);
+      }
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "verification");
+  assert.equal(result.ok || result.error.message, "tests crashed");
+  assert.deepEqual(events, ["run:implementing", "release", "verification"]);
+});
+
+test("implement issue workflow stops when verification artifact writing fails", async () => {
+  let diffCalled = false;
+
+  const result = await runImplementIssueWorkflow(options, {
+    agentWorkflow: async () => agentResult(),
+    verificationRunner: async () => verificationResult({ status: "passed" }),
+    gitClient: new FakeGitClient(diffResult(), () => {
+      diffCalled = true;
+    }),
+    ...artifactWriters({
+      writeVerificationArtifact: async () => {
+        throw new Error("verification write failed");
+      }
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.equal(result.ok || result.error.message, "verification write failed");
+  assert.equal(diffCalled, false);
+});
+
+test("implement issue workflow stops without diff or final run write when diff retrieval fails", async () => {
+  const events: string[] = [];
 
   const result = await runImplementIssueWorkflow(options, {
     agentWorkflow: async () => agentResult(),
@@ -254,10 +419,24 @@ test("implement issue workflow stops without artifact writing when diff retrieva
         message: "git diff failed"
       }
     }),
-    writeArtifacts: async () => {
-      artifactsWritten = true;
-      return artifactResult();
-    }
+    ...artifactWriters({
+      updateRunArtifact: async (input) => {
+        events.push(`run:${input.status}`);
+        return runArtifactResult(input);
+      },
+      writeReleaseArtifact: async (input) => {
+        events.push("release");
+        return releaseArtifactResult(input);
+      },
+      writeVerificationArtifact: async (input) => {
+        events.push("verificationArtifact");
+        return verificationArtifactResult(input);
+      },
+      writeDiffArtifact: async (input) => {
+        events.push("diffArtifact");
+        return diffArtifactResult(input);
+      }
+    })
   });
 
   assert.deepEqual(result, {
@@ -268,23 +447,66 @@ test("implement issue workflow stops without artifact writing when diff retrieva
       message: "git diff failed"
     }
   });
-  assert.equal(artifactsWritten, false);
+  assert.deepEqual(events, ["run:implementing", "release", "verificationArtifact"]);
 });
 
-test("implement issue workflow returns artifact write failures with the underlying message", async () => {
+test("implement issue workflow returns diff artifact write failures", async () => {
+  let finalRunWritten = false;
+
   const result = await runImplementIssueWorkflow(options, {
     agentWorkflow: async () => agentResult(),
     verificationRunner: async () => verificationResult({ status: "passed" }),
     gitClient: new FakeGitClient(diffResult()),
-    writeArtifacts: async () => {
-      throw new Error("disk full");
-    }
+    ...artifactWriters({
+      writeDiffArtifact: async () => {
+        throw new Error("diff write failed");
+      },
+      updateRunArtifact: async (input) => {
+        if (input.status === "needsFeedback") {
+          finalRunWritten = true;
+        }
+        return runArtifactResult(input);
+      }
+    })
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok || result.error.stage, "artifact_write");
-  assert.equal(result.ok || result.error.message, "disk full");
+  assert.equal(result.ok || result.error.message, "diff write failed");
+  assert.equal(finalRunWritten, false);
 });
+
+test("implement issue workflow returns final run artifact write failures", async () => {
+  const result = await runImplementIssueWorkflow(options, {
+    agentWorkflow: async () => agentResult(),
+    verificationRunner: async () => verificationResult({ status: "passed" }),
+    gitClient: new FakeGitClient(diffResult()),
+    ...artifactWriters({
+      updateRunArtifact: async (input) => {
+        if (input.status === "needsFeedback") {
+          throw new Error("final run write failed");
+        }
+        return runArtifactResult(input);
+      }
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.equal(result.ok || result.error.message, "final run write failed");
+});
+
+function artifactWriters(
+  overrides: Partial<ImplementIssueWorkflowDependencies> = {}
+): ImplementIssueWorkflowDependencies {
+  return {
+    updateRunArtifact: async (input) => runArtifactResult(input),
+    writeReleaseArtifact: async (input) => releaseArtifactResult(input),
+    writeVerificationArtifact: async (input) => verificationArtifactResult(input),
+    writeDiffArtifact: async (input) => diffArtifactResult(input),
+    ...overrides
+  };
+}
 
 function agentResult(): ImplementWorkflowResult {
   return {
@@ -346,4 +568,48 @@ function artifactResult(): ImplementArtifactWriterResult {
       status: "needsFeedback"
     }
   };
+}
+
+function releaseArtifactResult(
+  input: WriteReleaseArtifactInput
+): WriteReleaseArtifactResult {
+  const runDirectory = runDirectoryFor(input);
+  return {
+    runDirectory,
+    releasePath: `${runDirectory}/release.json`,
+    release: input.release
+  };
+}
+
+function verificationArtifactResult(
+  input: WriteVerificationArtifactInput
+): WriteVerificationArtifactResult {
+  const runDirectory = runDirectoryFor(input);
+  return {
+    runDirectory,
+    verificationOutputPath: `${runDirectory}/verification.txt`
+  };
+}
+
+function diffArtifactResult(input: WriteDiffArtifactInput): WriteDiffArtifactResult {
+  const runDirectory = runDirectoryFor(input);
+  return {
+    runDirectory,
+    diffPath: `${runDirectory}/diff.patch`
+  };
+}
+
+function runArtifactResult(input: UpdateRunArtifactInput): UpdateRunArtifactResult {
+  const runDirectory = runDirectoryFor(input);
+  return {
+    runDirectory,
+    runPath: `${runDirectory}/run.json`,
+    run: {
+      status: input.status ?? "needsFeedback"
+    }
+  };
+}
+
+function runDirectoryFor(input: { issueNumber: number; runsDirectory?: string }): string {
+  return `${input.runsDirectory ?? ".runs"}/issue-${input.issueNumber}`;
 }
