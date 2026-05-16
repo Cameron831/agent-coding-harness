@@ -69,7 +69,12 @@ export {
   parsePrepareRepository,
   runPrepareCli
 } from "./workflow/prepare/cli-prepare.js";
-export { writePrepareArtifacts } from "./workflow/prepare/artifact-writer.js";
+export {
+  updateRunArtifact,
+  writeIssueArtifact,
+  writePromptArtifact,
+  writeRunArtifact
+} from "./workflow/prepare/artifact-writer.js";
 export {
   buildFeedbackPrompt,
   buildImplementPrompt,
@@ -183,8 +188,11 @@ export type {
   RunImplementCliOptions
 } from "./workflow/implement/cli-implement.js";
 export type {
-  PrepareArtifactWriter,
+  PrepareIssueArtifactWriter,
   PreparePromptRenderer,
+  PreparePromptArtifactWriter,
+  PrepareRunArtifactUpdater,
+  PrepareRunArtifactWriter,
   PrepareWorkflowDependencies,
   PrepareWorkflowError,
   PrepareWorkflowFailureStage,
@@ -201,13 +209,18 @@ export type {
   RunPrepareCliOptions
 } from "./workflow/prepare/cli-prepare.js";
 export type {
-  PrepareArtifactWriterInput,
   PrepareArtifactWriterResult,
   PrepareIssueArtifact,
   PrepareRunArtifact,
   PrepareRunStatus,
-  WritePrepareArtifactsInput,
-  WritePrepareArtifactsResult
+  UpdateRunArtifactInput,
+  UpdateRunArtifactResult,
+  WriteIssueArtifactInput,
+  WriteIssueArtifactResult,
+  WritePromptArtifactInput,
+  WritePromptArtifactResult,
+  WriteRunArtifactInput,
+  WriteRunArtifactResult
 } from "./workflow/prepare/artifact-writer.js";
 export type {
   BuildFeedbackPromptInput,
