@@ -28,8 +28,10 @@ import {
   type ReleaseValidationError
 } from "../../parser/release.js";
 import {
-  writeReleasePublishedRunArtifact,
-  writeReleasePublishingRunArtifact,
+  updateRunStatus,
+  writePullRequestRunArtifact,
+  type PullRequestRunInput,
+  type UpdateRunStatusInput,
   type ReleaseRunArtifactResult
 } from "./artifact-writer.js";
 
@@ -88,11 +90,11 @@ export interface ReleasePublishWorkflowDependencies {
   loadRelease?: (
     path: string
   ) => Promise<ReleaseJsonResult<ImplementorReleaseMetadata>>;
-  writePublishingRunArtifact?: (
-    input: { runPath: string }
+  updateRunStatus?: (
+    input: UpdateRunStatusInput
   ) => Promise<ReleaseRunArtifactResult>;
-  writePublishedRunArtifact?: (
-    input: { runPath: string; pullRequestURL: string }
+  writePullRequestRunArtifact?: (
+    input: PullRequestRunInput
   ) => Promise<ReleaseRunArtifactResult>;
   gitClient?: GitAutomationClient;
   githubClient?: GitHubAutomationClient;
@@ -119,10 +121,9 @@ export async function runReleasePublishWorkflow(
   }
 
   const runPath = options.runPath ?? path.join(path.dirname(options.releasePath), "run.json");
-  const writePublishingRunArtifact =
-    dependencies.writePublishingRunArtifact ?? writeReleasePublishingRunArtifact;
+  const updateRunArtifactStatus = dependencies.updateRunStatus ?? updateRunStatus;
   try {
-    await writePublishingRunArtifact({ runPath });
+    await updateRunArtifactStatus({ runPath, status: "publishing" });
   } catch (cause) {
     return failureFromThrown("artifact_write", cause);
   }
@@ -209,6 +210,24 @@ export async function runReleasePublishWorkflow(
     return failureFromGitHubError("pr_creation", pullRequest.error);
   }
 
+  const writePullRequestRun =
+    dependencies.writePullRequestRunArtifact ?? writePullRequestRunArtifact;
+  try {
+    await writePullRequestRun({
+      runPath,
+      pullRequestURL: pullRequest.value.url
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
+  let artifacts;
+  try {
+    artifacts = await updateRunArtifactStatus({ runPath, status: "published" });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
+  }
+
   let cleanup;
   try {
     cleanup = await gitClient.cleanupWorktree({
@@ -220,18 +239,6 @@ export async function runReleasePublishWorkflow(
   }
   if (!cleanup.ok) {
     return failureFromGitError("cleanup", cleanup.error);
-  }
-
-  const writePublishedRunArtifact =
-    dependencies.writePublishedRunArtifact ?? writeReleasePublishedRunArtifact;
-  let artifacts;
-  try {
-    artifacts = await writePublishedRunArtifact({
-      runPath,
-      pullRequestURL: pullRequest.value.url
-    });
-  } catch (cause) {
-    return failureFromThrown("artifact_write", cause);
   }
 
   return {

@@ -6,8 +6,8 @@ import test from "node:test";
 import {
   renderReleasePullRequestBody,
   runReleasePublishWorkflow,
-  writeReleasePublishedRunArtifact,
-  writeReleasePublishingRunArtifact,
+  updateRunStatus,
+  writePullRequestRunArtifact,
   type AutomationResult,
   type CleanupWorktreeInput,
   type CleanupWorktreeResult,
@@ -244,27 +244,28 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
       {
         gitClient,
         githubClient,
-        writePublishingRunArtifact: async (input) => {
-          events.push("writePublishing");
-          return writeReleasePublishingRunArtifact(input);
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
         },
-        writePublishedRunArtifact: async (input) => {
-          events.push("writePublished");
-          return writeReleasePublishedRunArtifact(input);
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
         }
       }
     );
 
     assert.equal(result.ok, true);
     assert.deepEqual(events, [
-      "writePublishing",
+      "updateRunStatus:publishing",
       "getChangedFiles",
       "stageFiles",
       "commit",
       "pushBranch",
       "createPullRequest",
-      "cleanupWorktree",
-      "writePublished"
+      "writePullRequest",
+      "updateRunStatus:published",
+      "cleanupWorktree"
     ]);
     assert.deepEqual(gitClient.getChangedFilesInputs, [
       { targetWorktreePath: callerWorktreePath }
@@ -352,7 +353,7 @@ test("invalid release metadata fails before run artifact mutation", async () => 
       ok: false,
       errors: [{ message: "Release metadata field commit_message is required." }]
     }),
-    writePublishingRunArtifact: async () => {
+    updateRunStatus: async () => {
       publishingWritten = true;
       return { runPath: options.runPath, run };
     }
@@ -381,16 +382,16 @@ test("no changed files fails at staging before commit and cleanup", async () => 
       {
         gitClient,
         githubClient: new FakeGitHubClient(events),
-        writePublishingRunArtifact: async (input) => {
-          events.push("writePublishing");
-          return writeReleasePublishingRunArtifact(input);
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
         }
       }
     );
 
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.error.stage, "staging");
-    assert.deepEqual(events, ["writePublishing", "getChangedFiles"]);
+    assert.deepEqual(events, ["updateRunStatus:publishing", "getChangedFiles"]);
     assert.deepEqual(gitClient.commitInputs, []);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
   });
@@ -452,7 +453,7 @@ test("publishing artifact write failure stops before Git or GitHub mutation", as
     loadRelease: async () => ({ ok: true, value: release }),
     gitClient: new FakeGitClient(events),
     githubClient: new FakeGitHubClient(events),
-    writePublishingRunArtifact: async () => {
+    updateRunStatus: async () => {
       throw new Error("cannot write run");
     }
   });
@@ -524,9 +525,9 @@ test("staging, commit, push, and PR failures skip cleanup", async () => {
         {
           gitClient,
           githubClient,
-          writePublishingRunArtifact: async (input) => {
-            events.push("writePublishing");
-            return writeReleasePublishingRunArtifact(input);
+          updateRunStatus: async (input) => {
+            events.push(`updateRunStatus:${input.status}`);
+            return updateRunStatus(input);
           }
         }
       );
@@ -538,11 +539,18 @@ test("staging, commit, push, and PR failures skip cleanup", async () => {
         publishCase.name
       );
       assert.deepEqual(gitClient.cleanupWorktreeInputs, [], publishCase.name);
+
+      const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      assert.equal(persistedRun.status, "publishing", publishCase.name);
+      assert.equal(persistedRun.pullRequestURL, undefined, publishCase.name);
     });
   }
 });
 
-test("cleanup failure returns after PR creation and leaves run artifact publishing", async () => {
+test("cleanup failure returns after the run artifact is marked published", async () => {
   await withReleaseArtifacts(async (_root, releasePath, runPath) => {
     const events: string[] = [];
     const gitClient = new FakeGitClient(events, {
@@ -557,13 +565,13 @@ test("cleanup failure returns after PR creation and leaves run artifact publishi
       {
         gitClient,
         githubClient: new FakeGitHubClient(events),
-        writePublishingRunArtifact: async (input) => {
-          events.push("writePublishing");
-          return writeReleasePublishingRunArtifact(input);
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
         },
-        writePublishedRunArtifact: async (input) => {
-          events.push("writePublished");
-          return writeReleasePublishedRunArtifact(input);
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
         }
       }
     );
@@ -571,12 +579,14 @@ test("cleanup failure returns after PR creation and leaves run artifact publishi
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.error.stage, "cleanup");
     assert.deepEqual(events, [
-      "writePublishing",
+      "updateRunStatus:publishing",
       "getChangedFiles",
       "stageFiles",
       "commit",
       "pushBranch",
       "createPullRequest",
+      "writePullRequest",
+      "updateRunStatus:published",
       "cleanupWorktree"
     ]);
 
@@ -584,28 +594,76 @@ test("cleanup failure returns after PR creation and leaves run artifact publishi
       string,
       unknown
     >;
-    assert.equal(persistedRun.status, "publishing");
-    assert.equal(persistedRun.pullRequestURL, undefined);
+    assert.equal(persistedRun.status, "published");
+    assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/70");
     assert.equal(persistedRun.cleanup, undefined);
   });
 });
 
-test("final artifact write failure is reported after cleanup", async () => {
+test("PR URL write failure returns artifact_write before cleanup", async () => {
   await withReleaseArtifacts(async (_root, releasePath, runPath) => {
     const events: string[] = [];
+    const gitClient = new FakeGitClient(events);
 
     const result = await runReleasePublishWorkflow(
       { ...options, releasePath, runPath },
       {
-        gitClient: new FakeGitClient(events),
+        gitClient,
         githubClient: new FakeGitHubClient(events),
-        writePublishingRunArtifact: async (input) => {
-          events.push("writePublishing");
-          return writeReleasePublishingRunArtifact(input);
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
         },
-        writePublishedRunArtifact: async () => {
-          events.push("writePublished");
-          throw new Error("disk full");
+        writePullRequestRunArtifact: async () => {
+          events.push("writePullRequest");
+          throw new Error("cannot persist PR URL");
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.error.stage, "artifact_write");
+    assert.match(result.ok ? "" : result.error.message, /cannot persist PR URL/);
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "stageFiles",
+      "commit",
+      "pushBranch",
+      "createPullRequest",
+      "writePullRequest"
+    ]);
+    assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.pullRequestURL, undefined);
+  });
+});
+
+test("published status write failure returns artifact_write before cleanup", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events);
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient: new FakeGitHubClient(events),
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          if (input.status === "published") {
+            throw new Error("disk full");
+          }
+          return updateRunStatus(input);
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
         }
       }
     );
@@ -614,15 +672,23 @@ test("final artifact write failure is reported after cleanup", async () => {
     assert.equal(result.ok || result.error.stage, "artifact_write");
     assert.match(result.ok ? "" : result.error.message, /disk full/);
     assert.deepEqual(events, [
-      "writePublishing",
+      "updateRunStatus:publishing",
       "getChangedFiles",
       "stageFiles",
       "commit",
       "pushBranch",
       "createPullRequest",
-      "cleanupWorktree",
-      "writePublished"
+      "writePullRequest",
+      "updateRunStatus:published"
     ]);
+    assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/70");
   });
 });
 
