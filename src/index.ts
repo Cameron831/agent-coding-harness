@@ -21,7 +21,7 @@ export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
 export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
 export {
   getImplementArtifactPaths,
-  updateRunArtifact,
+  updateRunArtifact as updateImplementRunArtifact,
   writeDiffArtifact,
   writeReleaseArtifact,
   writeVerificationArtifact
@@ -74,7 +74,7 @@ export {
   runPrepareCli
 } from "./workflow/prepare/cli-prepare.js";
 export {
-  updateRunArtifact,
+  updateRunArtifact as updatePrepareRunArtifact,
   writeIssueArtifact,
   writePromptArtifact,
   writeRunArtifact
@@ -123,8 +123,8 @@ export type {
   ImplementRunArtifact,
   ImplementRunArtifactUpdate,
   ImplementRunStatus,
-  UpdateRunArtifactInput,
-  UpdateRunArtifactResult,
+  UpdateRunArtifactInput as UpdateImplementRunArtifactInput,
+  UpdateRunArtifactResult as UpdateImplementRunArtifactResult,
   WriteDiffArtifactInput,
   WriteDiffArtifactResult,
   WriteReleaseArtifactInput,
@@ -228,8 +228,8 @@ export type {
   PrepareIssueArtifact,
   PrepareRunArtifact,
   PrepareRunStatus,
-  UpdateRunArtifactInput,
-  UpdateRunArtifactResult,
+  UpdateRunArtifactInput as UpdatePrepareRunArtifactInput,
+  UpdateRunArtifactResult as UpdatePrepareRunArtifactResult,
   WriteIssueArtifactInput,
   WriteIssueArtifactResult,
   WritePromptArtifactInput,

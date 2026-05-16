@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  updateRunArtifact,
+  updateImplementRunArtifact as updateRunArtifact,
   writeDiffArtifact,
   writeReleaseArtifact,
   writeVerificationArtifact,
