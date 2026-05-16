@@ -4,7 +4,11 @@ export interface RunPathInput {
   runPath: string;
 }
 
-export interface PublishedRunInput extends RunPathInput {
+export interface UpdateRunStatusInput extends RunPathInput {
+  status: string;
+}
+
+export interface PullRequestRunInput extends RunPathInput {
   pullRequestURL: string;
 }
 
@@ -41,14 +45,14 @@ export async function loadReleaseRunArtifact(
   return parsed;
 }
 
-export async function writeReleasePublishingRunArtifact(
-  input: RunPathInput
+export async function updateRunStatus(
+  input: UpdateRunStatusInput
 ): Promise<ReleaseRunArtifactResult> {
   const existingRun = await loadReleaseRunArtifact(input);
 
   const run = {
     ...existingRun,
-    status: "publishing"
+    status: input.status
   };
 
   await writeFile(input.runPath, formatJson(run), "utf8");
@@ -59,15 +63,14 @@ export async function writeReleasePublishingRunArtifact(
   };
 }
 
-export async function writeReleasePublishedRunArtifact(
-  input: PublishedRunInput
+export async function writePullRequestRunArtifact(
+  input: PullRequestRunInput
 ): Promise<ReleaseRunArtifactResult> {
   const existingRun = await loadReleaseRunArtifact(input);
   validatePullRequestURL(input.pullRequestURL, input.runPath);
 
   const run = {
     ...existingRun,
-    status: "published",
     pullRequestURL: input.pullRequestURL
   };
 

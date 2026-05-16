@@ -24,8 +24,8 @@ export {
 } from "./workflow/implement/artifact-writer.js";
 export {
   loadReleaseRunArtifact,
-  writeReleasePublishedRunArtifact,
-  writeReleasePublishingRunArtifact
+  updateRunStatus,
+  writePullRequestRunArtifact
 } from "./workflow/release/artifact-writer.js";
 export {
   releasePublishWorkflow,
@@ -117,9 +117,10 @@ export type {
   WriteImplementArtifactsResult
 } from "./workflow/implement/artifact-writer.js";
 export type {
-  PublishedRunInput,
+  PullRequestRunInput,
   ReleaseRunArtifactResult,
-  RunPathInput
+  RunPathInput,
+  UpdateRunStatusInput
 } from "./workflow/release/artifact-writer.js";
 export type {
   ReleasePublishWorkflowDependencies,
