@@ -102,3 +102,11 @@ export interface CleanupWorktreeInput extends TargetRepositoryPath, TargetWorktr
 export interface CleanupWorktreeResult extends TargetRepositoryPath, TargetWorktreePath {
   removed: boolean;
 }
+
+export interface DeleteBranchInput extends TargetRepositoryPath {
+  branchName: string;
+}
+
+export interface DeleteBranchResult extends TargetRepositoryPath {
+  branchName: string;
+}

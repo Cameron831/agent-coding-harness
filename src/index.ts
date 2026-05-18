@@ -274,6 +274,8 @@ export type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteBranchInput,
+  DeleteBranchResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,

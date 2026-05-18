@@ -109,6 +109,10 @@ class FakeGitClient implements GitAutomationClient {
   ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("cleanupWorktree should not be called.");
   }
+
+  async deleteBranch(): Promise<never> {
+    throw new Error("deleteBranch should not be called.");
+  }
 }
 
 test("implement issue workflow sequences individual artifact writes", async () => {

@@ -76,6 +76,10 @@ class FakeGitClient implements GitAutomationClient {
   async cleanupWorktree(): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("not used");
   }
+
+  async deleteBranch(): Promise<never> {
+    throw new Error("not used");
+  }
 }
 
 class FakeCommandRunner implements ImplementVerificationCommandRunner {

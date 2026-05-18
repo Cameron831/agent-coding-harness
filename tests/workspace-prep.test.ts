@@ -95,6 +95,10 @@ class FakeGitAutomationClient implements GitAutomationClient {
   ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("cleanupWorktree should not be called by workspace prep tests.");
   }
+
+  async deleteBranch(): Promise<never> {
+    throw new Error("deleteBranch should not be called by workspace prep tests.");
+  }
 }
 
 test("prepareIssueWorkspace derives branch name from issue number and title", async () => {

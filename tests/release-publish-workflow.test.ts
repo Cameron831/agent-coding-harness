@@ -17,6 +17,8 @@ import {
   type CreateIssueInput,
   type CreatePullRequestInput,
   type CreateWorktreeInput,
+  type DeleteBranchInput,
+  type DeleteBranchResult,
   type GetChangedFilesInput,
   type GetChangedFilesResult,
   type GetDiffInput,
@@ -80,6 +82,7 @@ class FakeGitClient implements GitAutomationClient {
   readonly commitInputs: CommitInput[] = [];
   readonly pushBranchInputs: PushBranchInput[] = [];
   readonly cleanupWorktreeInputs: CleanupWorktreeInput[] = [];
+  readonly deleteBranchInputs: DeleteBranchInput[] = [];
 
   constructor(
     private readonly events: string[],
@@ -89,6 +92,7 @@ class FakeGitClient implements GitAutomationClient {
       commit?: GitAutomationResult<CommitResult>;
       pushBranch?: GitAutomationResult<PushBranchResult>;
       cleanupWorktree?: GitAutomationResult<CleanupWorktreeResult>;
+      deleteBranch?: GitAutomationResult<DeleteBranchResult>;
     } = {}
   ) {}
 
@@ -191,6 +195,22 @@ class FakeGitClient implements GitAutomationClient {
       }
     );
   }
+
+  async deleteBranch(
+    input: DeleteBranchInput
+  ): Promise<GitAutomationResult<DeleteBranchResult>> {
+    this.events.push("deleteBranch");
+    this.deleteBranchInputs.push(input);
+    return (
+      this.overrides.deleteBranch ?? {
+        ok: true,
+        value: {
+          targetRepositoryPath: input.targetRepositoryPath,
+          branchName: input.branchName
+        }
+      }
+    );
+  }
 }
 
 class FakeGitHubClient implements GitHubAutomationClient {
@@ -280,7 +300,8 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
       "createPullRequest",
       "writePullRequest",
       "updateRunStatus:published",
-      "cleanupWorktree"
+      "cleanupWorktree",
+      "deleteBranch"
     ]);
     assert.deepEqual(gitClient.getChangedFilesInputs, [
       { targetWorktreePath: callerWorktreePath }
@@ -320,6 +341,12 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
         targetWorktreePath: callerWorktreePath
       }
     ]);
+    assert.deepEqual(gitClient.deleteBranchInputs, [
+      {
+        targetRepositoryPath: options.targetRepositoryPath,
+        branchName: callerBranch
+      }
+    ]);
 
     const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
       string,
@@ -339,6 +366,7 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
       "https://github.com/owner/name/pull/70"
     );
     assert.equal(result.ok && result.value.cleanup.removed, true);
+    assert.equal(result.ok && result.value.branchCleanup.branchName, callerBranch);
 
   });
 });
@@ -409,6 +437,7 @@ test("no changed files fails at staging before commit and cleanup", async () => 
     assert.deepEqual(events, ["updateRunStatus:publishing", "getChangedFiles"]);
     assert.deepEqual(gitClient.commitInputs, []);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+    assert.deepEqual(gitClient.deleteBranchInputs, []);
   });
 });
 
@@ -449,6 +478,12 @@ test("release publish workflow uses caller-supplied branch and worktree path", a
         {
           targetRepositoryPath: options.targetRepositoryPath,
           targetWorktreePath: "C:/caller/worktree"
+        }
+      ]);
+      assert.deepEqual(gitClient.deleteBranchInputs, [
+        {
+          targetRepositoryPath: options.targetRepositoryPath,
+          branchName: "caller-branch"
         }
       ]);
     },
@@ -554,6 +589,7 @@ test("staging, commit, push, and PR failures skip cleanup", async () => {
         publishCase.name
       );
       assert.deepEqual(gitClient.cleanupWorktreeInputs, [], publishCase.name);
+      assert.deepEqual(gitClient.deleteBranchInputs, [], publishCase.name);
 
       const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
         string,
@@ -604,6 +640,58 @@ test("cleanup failure returns after the run artifact is marked published", async
       "updateRunStatus:published",
       "cleanupWorktree"
     ]);
+    assert.deepEqual(gitClient.deleteBranchInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "published");
+    assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/70");
+    assert.equal(persistedRun.cleanup, undefined);
+  });
+});
+
+test("delete branch failure returns cleanup after worktree cleanup and published artifact", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events, {
+      deleteBranch: {
+        ok: false,
+        error: gitError("branch is not fully merged")
+      }
+    });
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient: new FakeGitHubClient(events),
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.error.stage, "cleanup");
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "stageFiles",
+      "commit",
+      "pushBranch",
+      "createPullRequest",
+      "writePullRequest",
+      "updateRunStatus:published",
+      "cleanupWorktree",
+      "deleteBranch"
+    ]);
 
     const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
       string,
@@ -649,6 +737,7 @@ test("PR URL write failure returns artifact_write before cleanup", async () => {
       "writePullRequest"
     ]);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+    assert.deepEqual(gitClient.deleteBranchInputs, []);
 
     const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
       string,
@@ -697,6 +786,7 @@ test("published status write failure returns artifact_write before cleanup", asy
       "updateRunStatus:published"
     ]);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+    assert.deepEqual(gitClient.deleteBranchInputs, []);
 
     const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
       string,

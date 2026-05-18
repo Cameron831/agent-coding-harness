@@ -14,6 +14,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteBranchInput,
+  DeleteBranchResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,
@@ -374,6 +376,34 @@ export class LocalGitAutomationClient implements GitAutomationClient {
     };
   }
 
+  async deleteBranch(
+    input: DeleteBranchInput
+  ): Promise<GitAutomationResult<DeleteBranchResult>> {
+    const validationError = validateDeleteBranchInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetRepositoryPath,
+      "branch",
+      "-d",
+      input.branchName
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetRepositoryPath: input.targetRepositoryPath,
+        branchName: input.branchName
+      }
+    };
+  }
+
   private async runCommand(
     args: readonly string[]
   ): Promise<GitAutomationResult<GitCommandResult>> {
@@ -564,6 +594,27 @@ function validateCleanupWorktreeInput(
   );
   if (targetWorktreePathError) {
     return targetWorktreePathError;
+  }
+
+  return undefined;
+}
+
+function validateDeleteBranchInput(
+  input: DeleteBranchInput
+): GitAutomationError | undefined {
+  const targetRepositoryPathError = validateCleanupPath(
+    input.targetRepositoryPath,
+    "Target repository path"
+  );
+  if (targetRepositoryPathError) {
+    return targetRepositoryPathError;
+  }
+
+  if (typeof input.branchName !== "string" || input.branchName.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Branch name is required."
+    };
   }
 
   return undefined;

@@ -58,6 +58,10 @@ const successResult: ReleasePublishWorkflowResult = {
       targetWorktreePath: "C:/repos/worktrees/issue-74",
       removed: true
     },
+    branchCleanup: {
+      targetRepositoryPath: "C:/repos/target",
+      branchName: "74-release-cli"
+    },
     artifacts: {
       runPath: ".runs/issue-74/run.json",
       run: {
@@ -257,6 +261,7 @@ test("release CLI runner prints concise success output", async () => {
     assert.match(stdout.join("\n"), /Pushed: origin\/74-release-cli/);
     assert.match(stdout.join("\n"), /Pull request: #74 https:\/\/github\.com\/owner\/name\/pull\/74/);
     assert.match(stdout.join("\n"), /Cleanup: removed/);
+    assert.match(stdout.join("\n"), /Branch cleanup: deleted 74-release-cli/);
   });
 });
 

@@ -164,7 +164,8 @@ export function formatReleaseSuccess(
     `Commit: ${value.commit.commitSha}`,
     `Pushed: ${value.push.remoteName}/${value.push.branchName}`,
     `Pull request: #${value.pullRequest.pullRequestNumber} ${value.pullRequest.url}`,
-    `Cleanup: ${value.cleanup.removed ? "removed" : "not removed"}`
+    `Cleanup: ${value.cleanup.removed ? "removed" : "not removed"}`,
+    `Branch cleanup: deleted ${value.branchCleanup.branchName}`
   ].join("\n");
 }
 

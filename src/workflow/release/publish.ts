@@ -5,6 +5,7 @@ import { LocalGitAutomationClient } from "../../git/git-client.js";
 import type {
   CleanupWorktreeResult,
   CommitResult,
+  DeleteBranchResult,
   GetChangedFilesResult,
   GitAutomationError,
   GitAutomationErrorCode,
@@ -73,6 +74,7 @@ export interface ReleasePublishWorkflowSuccess {
   push: PushBranchResult;
   pullRequest: PullRequestDetails;
   cleanup: CleanupWorktreeResult;
+  branchCleanup: DeleteBranchResult;
   artifacts: ReleaseRunArtifactResult;
 }
 
@@ -241,6 +243,19 @@ export async function runReleasePublishWorkflow(
     return failureFromGitError("cleanup", cleanup.error);
   }
 
+  let branchCleanup;
+  try {
+    branchCleanup = await gitClient.deleteBranch({
+      targetRepositoryPath: options.targetRepositoryPath,
+      branchName: options.branch
+    });
+  } catch (cause) {
+    return failureFromThrown("cleanup", cause);
+  }
+  if (!branchCleanup.ok) {
+    return failureFromGitError("cleanup", branchCleanup.error);
+  }
+
   return {
     ok: true,
     value: {
@@ -253,6 +268,7 @@ export async function runReleasePublishWorkflow(
       push: push.value,
       pullRequest: pullRequest.value,
       cleanup: cleanup.value,
+      branchCleanup: branchCleanup.value,
       artifacts
     }
   };

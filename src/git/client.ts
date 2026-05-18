@@ -6,6 +6,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteBranchInput,
+  DeleteBranchResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,
@@ -38,4 +40,7 @@ export interface GitAutomationClient {
   cleanupWorktree(
     input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>>;
+  deleteBranch(
+    input: DeleteBranchInput
+  ): Promise<GitAutomationResult<DeleteBranchResult>>;
 }
