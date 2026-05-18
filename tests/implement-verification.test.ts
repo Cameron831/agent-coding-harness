@@ -65,6 +65,10 @@ class FakeGitClient implements GitAutomationClient {
     throw new Error("not used");
   }
 
+  async checkRemoteBranchCommit(): Promise<never> {
+    throw new Error("not used");
+  }
+
   async pushBranch(): Promise<GitAutomationResult<PushBranchResult>> {
     throw new Error("not used");
   }

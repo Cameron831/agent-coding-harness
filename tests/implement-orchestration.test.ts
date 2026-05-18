@@ -94,6 +94,10 @@ class FakeGitClient implements GitAutomationClient {
     throw new Error("commit should not be called.");
   }
 
+  async checkRemoteBranchCommit(): Promise<never> {
+    throw new Error("checkRemoteBranchCommit should not be called.");
+  }
+
   async pushBranch(
     _input: PushBranchInput
   ): Promise<GitAutomationResult<PushBranchResult>> {

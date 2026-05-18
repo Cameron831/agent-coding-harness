@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   AutomationResult,
+  CheckRemoteBranchCommitResult,
   CleanupWorktreeResult,
   CommitResult,
   GetChangedFilesResult,
@@ -63,6 +64,16 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
         commitSha: "abc123"
       });
     },
+    async checkRemoteBranchCommit(input) {
+      return ok<CheckRemoteBranchCommitResult>({
+        targetWorktreePath: input.targetWorktreePath,
+        branchName: input.branchName,
+        remoteName: input.remoteName ?? "origin",
+        expectedCommit: input.expectedCommit,
+        status: "matches",
+        actualCommit: input.expectedCommit
+      });
+    },
     async pushBranch(input) {
       return ok<PushBranchResult>({
         targetWorktreePath: input.targetWorktreePath,
@@ -102,6 +113,12 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     targetWorktreePath,
     message: "Add Git automation contract"
   });
+  const remoteBranch = await fakeClient.checkRemoteBranchCommit({
+    targetWorktreePath,
+    branchName: "issue-20-git-contract",
+    remoteName: "origin",
+    expectedCommit: "abc123"
+  });
   const push = await fakeClient.pushBranch({
     targetWorktreePath,
     branchName: "issue-20-git-contract",
@@ -120,6 +137,7 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
   assert.equal(head.ok && head.value.head, "abc123");
   assert.deepEqual(changedFiles.ok && changedFiles.value.files, ["src/index.ts"]);
   assert.equal(commit.ok && commit.value.commitSha, "abc123");
+  assert.equal(remoteBranch.ok && remoteBranch.value.status, "matches");
   assert.equal(push.ok && push.value.remoteName, "origin");
   assert.equal(cleanup.ok && cleanup.value.removed, true);
 });

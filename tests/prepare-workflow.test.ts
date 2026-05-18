@@ -143,6 +143,12 @@ class FakeGitClient implements GitAutomationClient {
     throw new Error("commit should not be called by prepare workflow tests.");
   }
 
+  async checkRemoteBranchCommit(): Promise<never> {
+    throw new Error(
+      "checkRemoteBranchCommit should not be called by prepare workflow tests."
+    );
+  }
+
   async pushBranch(
     _input: PushBranchInput
   ): Promise<GitAutomationResult<PushBranchResult>> {

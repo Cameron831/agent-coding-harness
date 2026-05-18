@@ -9,6 +9,8 @@ import {
 import type {
   CleanupWorktreeInput,
   CleanupWorktreeResult,
+  CheckRemoteBranchCommitInput,
+  CheckRemoteBranchCommitResult,
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
@@ -207,6 +209,52 @@ export class LocalGitAutomationClient implements GitAutomationClient {
       value: {
         targetWorktreePath: input.targetWorktreePath,
         commitSha: revParseResult.value.stdout.trim()
+      }
+    };
+  }
+
+  async checkRemoteBranchCommit(
+    input: CheckRemoteBranchCommitInput
+  ): Promise<GitAutomationResult<CheckRemoteBranchCommitResult>> {
+    const validationError = validateCheckRemoteBranchCommitInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const remoteName = input.remoteName ?? "origin";
+    const expectedCommit = input.expectedCommit.trim();
+    const result = await this.runCommand([
+      "-C",
+      input.targetWorktreePath,
+      "ls-remote",
+      "--heads",
+      remoteName,
+      `refs/heads/${input.branchName}`
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    const actualCommit = parseLsRemoteHeadCommit(
+      result.value.stdout,
+      input.branchName
+    );
+    const status =
+      actualCommit === undefined
+        ? "missing"
+        : actualCommit === expectedCommit
+          ? "matches"
+          : "different";
+
+    return {
+      ok: true,
+      value: {
+        targetWorktreePath: input.targetWorktreePath,
+        branchName: input.branchName,
+        remoteName,
+        expectedCommit,
+        status,
+        ...(actualCommit !== undefined ? { actualCommit } : {})
       }
     };
   }
@@ -461,6 +509,44 @@ function validatePushBranchInput(
   return undefined;
 }
 
+function validateCheckRemoteBranchCommitInput(
+  input: CheckRemoteBranchCommitInput
+): GitAutomationError | undefined {
+  const targetWorktreePathError = validateTargetWorktreePath(input);
+  if (targetWorktreePathError) {
+    return targetWorktreePathError;
+  }
+
+  if (typeof input.branchName !== "string" || input.branchName.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Branch name is required."
+    };
+  }
+
+  if (
+    input.remoteName !== undefined &&
+    (typeof input.remoteName !== "string" || input.remoteName.trim() === "")
+  ) {
+    return {
+      code: "validation_failed",
+      message: "Remote name must be non-empty when supplied."
+    };
+  }
+
+  if (
+    typeof input.expectedCommit !== "string" ||
+    input.expectedCommit.trim() === ""
+  ) {
+    return {
+      code: "validation_failed",
+      message: "Expected commit is required."
+    };
+  }
+
+  return undefined;
+}
+
 function validateCleanupWorktreeInput(
   input: CleanupWorktreeInput
 ): GitAutomationError | undefined {
@@ -532,6 +618,26 @@ function isKnownWorktreePath(
 
 function normalizePathForComparison(pathValue: string): string {
   return path.normalize(pathValue.trim()).replaceAll("\\", "/").toLowerCase();
+}
+
+function parseLsRemoteHeadCommit(
+  lsRemoteOutput: string,
+  branchName: string
+): string | undefined {
+  const expectedRef = `refs/heads/${branchName}`;
+  for (const line of lsRemoteOutput.split(/\r?\n/)) {
+    const trimmedLine = line.trim();
+    if (trimmedLine === "") {
+      continue;
+    }
+
+    const [commit, ref] = trimmedLine.split(/\s+/, 2);
+    if (commit !== undefined && ref === expectedRef) {
+      return commit;
+    }
+  }
+
+  return undefined;
 }
 
 function parsePorcelainChangedFiles(statusOutput: string): string[] {

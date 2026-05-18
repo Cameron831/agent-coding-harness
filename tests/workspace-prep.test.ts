@@ -78,6 +78,12 @@ class FakeGitAutomationClient implements GitAutomationClient {
     throw new Error("commit should not be called by workspace prep tests.");
   }
 
+  async checkRemoteBranchCommit(): Promise<never> {
+    throw new Error(
+      "checkRemoteBranchCommit should not be called by workspace prep tests."
+    );
+  }
+
   async pushBranch(
     _input: PushBranchInput
   ): Promise<GitAutomationResult<PushBranchResult>> {
