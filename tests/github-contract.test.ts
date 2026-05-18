@@ -44,6 +44,17 @@ test("GitHubAutomationClient can be satisfied by a typed fake client", async () 
         url: "https://github.com/example/agent-workforce/issues/6"
       });
     },
+    async listOpenPullRequests(input) {
+      return ok<PullRequestDetails[]>([
+        {
+          ...input,
+          pullRequestNumber: 12,
+          title: "Add GitHub automation contract",
+          state: "open",
+          url: "https://github.com/example/agent-workforce/pull/12"
+        }
+      ]);
+    },
     async createPullRequest(input) {
       linkedIssueNumber = input.linkedIssueNumber;
 
@@ -69,8 +80,14 @@ test("GitHubAutomationClient can be satisfied by a typed fake client", async () 
     base: "main",
     linkedIssueNumber: 6
   });
+  const openPullRequests = await fakeClient.listOpenPullRequests({
+    repository,
+    head: "issue-6-contract",
+    base: "main"
+  });
 
   assert.equal(issue.ok && issue.value.issueNumber, 6);
   assert.equal(pullRequest.ok && pullRequest.value.base, "main");
+  assert.equal(openPullRequests.ok && openPullRequests.value.length, 1);
   assert.equal(linkedIssueNumber, 6);
 });

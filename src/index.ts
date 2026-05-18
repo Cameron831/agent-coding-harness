@@ -260,6 +260,7 @@ export type {
   IssueDetails,
   IssueIdentifier,
   IssueState,
+  ListOpenPullRequestsInput,
   PullRequestDetails,
   PullRequestIdentifier,
   PullRequestState,

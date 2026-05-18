@@ -72,6 +72,12 @@ export interface CreatePullRequestInput {
   linkedIssueNumber?: number;
 }
 
+export interface ListOpenPullRequestsInput {
+  repository?: RepositorySelection;
+  head: string;
+  base: string;
+}
+
 export interface PullRequestDetails extends PullRequestIdentifier {
   title: string;
   state: PullRequestState;

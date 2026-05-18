@@ -49,6 +49,29 @@ function pullRequestJson(state = "OPEN"): string {
   });
 }
 
+function pullRequestListJson(
+  pullRequests: Array<{
+    number: number;
+    title?: string;
+    headRefName?: string;
+    baseRefName?: string;
+    isDraft?: boolean;
+  }>
+): string {
+  return JSON.stringify(
+    pullRequests.map((pullRequest) => ({
+      number: pullRequest.number,
+      title: pullRequest.title ?? "Add pull request support",
+      state: "OPEN",
+      url: `https://github.com/example/agent-workforce/pull/${pullRequest.number}`,
+      body: "Implement pull request creation.",
+      headRefName: pullRequest.headRefName ?? "issue-8-pr-create",
+      baseRefName: pullRequest.baseRefName ?? "main",
+      isDraft: pullRequest.isDraft ?? false
+    }))
+  );
+}
+
 test("createIssue creates without JSON, views the issue, and parses JSON", async () => {
   const runner = new FakeRunner();
   runner.results = [
@@ -360,6 +383,170 @@ test("createIssue returns a failure when the issue URL cannot be parsed", async 
       "example/agent-workforce"
     ]
   ]);
+});
+
+test("listOpenPullRequests returns an empty list when gh finds no matches", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: "[]",
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.listOpenPullRequests({
+    repository,
+    head: "issue-8-pr-create",
+    base: "main"
+  });
+
+  assert.deepEqual(runner.calls, [
+    [
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--head",
+      "example:issue-8-pr-create",
+      "--base",
+      "main",
+      "--json",
+      "number,title,state,url,body,headRefName,baseRefName,isDraft",
+      "--repo",
+      "example/agent-workforce"
+    ]
+  ]);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.ok && result.value, []);
+});
+
+test("listOpenPullRequests parses one matching open pull request", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: pullRequestListJson([{ number: 12, isDraft: true }]),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.listOpenPullRequests({
+    repository,
+    head: "issue-8-pr-create",
+    base: "main"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.length, 1);
+  assert.equal(result.ok && result.value[0]?.pullRequestNumber, 12);
+  assert.equal(result.ok && result.value[0]?.state, "open");
+  assert.equal(result.ok && result.value[0]?.head, "issue-8-pr-create");
+  assert.equal(result.ok && result.value[0]?.base, "main");
+  assert.equal(result.ok && result.value[0]?.draft, true);
+  assert.equal(result.ok && result.value[0]?.repository, repository);
+});
+
+test("listOpenPullRequests parses multiple matching open pull requests", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: pullRequestListJson([
+        { number: 12, title: "First PR" },
+        { number: 13, title: "Second PR" }
+      ]),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.listOpenPullRequests({
+    repository,
+    head: "issue-8-pr-create",
+    base: "main"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    result.ok && result.value.map((pullRequest) => pullRequest.pullRequestNumber),
+    [12, 13]
+  );
+});
+
+test("listOpenPullRequests validation failures return before invoking the runner", async () => {
+  const runner = new FakeRunner();
+  const client = new GhGitHubAutomationClient(runner);
+
+  const missingHead = await client.listOpenPullRequests({
+    repository,
+    head: " ",
+    base: "main"
+  });
+  const missingBase = await client.listOpenPullRequests({
+    repository,
+    head: "feature",
+    base: ""
+  });
+  const invalidRepository = await client.listOpenPullRequests({
+    repository: { owner: "", name: "agent-workforce" },
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(missingHead.ok, false);
+  assert.equal(!missingHead.ok && missingHead.error.code, "validation_failed");
+  assert.equal(missingBase.ok, false);
+  assert.equal(!missingBase.ok && missingBase.error.code, "validation_failed");
+  assert.equal(invalidRepository.ok, false);
+  assert.equal(!invalidRepository.ok && invalidRepository.error.code, "validation_failed");
+  assert.deepEqual(runner.calls, []);
+});
+
+test("listOpenPullRequests returns a failure for non-zero gh results", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 1,
+      stdout: "",
+      stderr: "could not list pull requests"
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.listOpenPullRequests({
+    repository,
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "unknown");
+  assert.match(!result.ok ? result.error.message : "", /list pull requests/);
+});
+
+test("listOpenPullRequests returns a failure for unexpected PR JSON", async () => {
+  const runner = new FakeRunner();
+  runner.results = [
+    {
+      exitCode: 0,
+      stdout: JSON.stringify([{ number: 12 }]),
+      stderr: ""
+    }
+  ];
+  const client = new GhGitHubAutomationClient(runner);
+
+  const result = await client.listOpenPullRequests({
+    repository,
+    head: "feature",
+    base: "main"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "unknown");
+  assert.match(!result.ok ? result.error.message : "", /parse/);
 });
 
 test("createPullRequest creates a PR, views it, and parses JSON", async () => {
