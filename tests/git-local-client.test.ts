@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LocalGitAutomationClient,
+  type CheckRemoteBranchCommitInput,
   type CleanupWorktreeInput,
   type CommitInput,
   type CreateWorktreeInput,
@@ -352,6 +353,100 @@ test("LocalGitAutomationClient pushes branches from the target worktree", async 
     }
   });
   assert.deepEqual(upstreamResult, suppliedRemoteResult);
+});
+
+test("LocalGitAutomationClient reports a remote branch at the expected commit", async () => {
+  const expectedCommit = "1111111111111111111111111111111111111111";
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: `${expectedCommit}\trefs/heads/release/2026-05-18\n`,
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.checkRemoteBranchCommit({
+    targetWorktreePath: validWorktreePath,
+    branchName: "release/2026-05-18",
+    expectedCommit
+  });
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      validWorktreePath,
+      "ls-remote",
+      "--heads",
+      "origin",
+      "refs/heads/release/2026-05-18"
+    ]
+  ]);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      branchName: "release/2026-05-18",
+      remoteName: "origin",
+      expectedCommit,
+      status: "matches",
+      actualCommit: expectedCommit
+    }
+  });
+});
+
+test("LocalGitAutomationClient reports a missing remote branch", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: "",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.checkRemoteBranchCommit({
+    targetWorktreePath: validWorktreePath,
+    branchName: "release/2026-05-18",
+    remoteName: "fork",
+    expectedCommit: "1111111111111111111111111111111111111111"
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      branchName: "release/2026-05-18",
+      remoteName: "fork",
+      expectedCommit: "1111111111111111111111111111111111111111",
+      status: "missing"
+    }
+  });
+});
+
+test("LocalGitAutomationClient reports a remote branch at a different commit", async () => {
+  const expectedCommit = "1111111111111111111111111111111111111111";
+  const actualCommit = "2222222222222222222222222222222222222222";
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: `${actualCommit}\trefs/heads/release/2026-05-18\n`,
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.checkRemoteBranchCommit({
+    targetWorktreePath: validWorktreePath,
+    branchName: "release/2026-05-18",
+    expectedCommit
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetWorktreePath: validWorktreePath,
+      branchName: "release/2026-05-18",
+      remoteName: "origin",
+      expectedCommit,
+      status: "different",
+      actualCommit
+    }
+  });
 });
 
 test("LocalGitAutomationClient removes a clean associated worktree from the target repository", async () => {
@@ -733,6 +828,78 @@ test("LocalGitAutomationClient validates pushBranch input before running git", a
   }
 });
 
+test("LocalGitAutomationClient validates checkRemoteBranchCommit input before running git", async () => {
+  const cases: Array<[string, Partial<CheckRemoteBranchCommitInput>]> = [
+    [
+      "missing targetWorktreePath",
+      {
+        branchName: "release/2026-05-18",
+        expectedCommit: "1111111111111111111111111111111111111111"
+      }
+    ],
+    [
+      "blank targetWorktreePath",
+      {
+        targetWorktreePath: " ",
+        branchName: "release/2026-05-18",
+        expectedCommit: "1111111111111111111111111111111111111111"
+      }
+    ],
+    [
+      "missing branchName",
+      {
+        targetWorktreePath: validWorktreePath,
+        expectedCommit: "1111111111111111111111111111111111111111"
+      }
+    ],
+    [
+      "blank branchName",
+      {
+        targetWorktreePath: validWorktreePath,
+        branchName: "\t",
+        expectedCommit: "1111111111111111111111111111111111111111"
+      }
+    ],
+    [
+      "blank remoteName",
+      {
+        targetWorktreePath: validWorktreePath,
+        branchName: "release/2026-05-18",
+        remoteName: "\n",
+        expectedCommit: "1111111111111111111111111111111111111111"
+      }
+    ],
+    [
+      "missing expectedCommit",
+      {
+        targetWorktreePath: validWorktreePath,
+        branchName: "release/2026-05-18"
+      }
+    ],
+    [
+      "blank expectedCommit",
+      {
+        targetWorktreePath: validWorktreePath,
+        branchName: "release/2026-05-18",
+        expectedCommit: " "
+      }
+    ]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.checkRemoteBranchCommit(
+      input as CheckRemoteBranchCommitInput
+    );
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
 test("LocalGitAutomationClient returns non-zero git failures with the command result as cause", async () => {
   const gitResult = {
     exitCode: 128,
@@ -871,6 +1038,29 @@ test("LocalGitAutomationClient returns pushBranch non-zero git failures with the
   const result = await client.pushBranch({
     targetWorktreePath: validWorktreePath,
     branchName: "issue-22"
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: could not read from remote repository");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
+test("LocalGitAutomationClient returns checkRemoteBranchCommit non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 128,
+    stdout: "",
+    stderr: "fatal: could not read from remote repository\n"
+  };
+  const runner = new FakeGitCommandRunner(gitResult);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.checkRemoteBranchCommit({
+    targetWorktreePath: validWorktreePath,
+    branchName: "release/2026-05-18",
+    expectedCommit: "1111111111111111111111111111111111111111"
   });
 
   assert.equal(result.ok, false);

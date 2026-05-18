@@ -268,6 +268,8 @@ export type {
 export type {
   CleanupWorktreeInput,
   CleanupWorktreeResult,
+  CheckRemoteBranchCommitInput,
+  CheckRemoteBranchCommitResult,
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
@@ -282,6 +284,7 @@ export type {
   GitAutomationResult,
   PushBranchInput,
   PushBranchResult,
+  RemoteBranchCommitStatus,
   StageFilesInput,
   StageFilesResult,
   TargetRepositoryPath,

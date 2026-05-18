@@ -151,6 +151,12 @@ class FakeGitClient implements GitAutomationClient {
     );
   }
 
+  async checkRemoteBranchCommit(): Promise<never> {
+    throw new Error(
+      "checkRemoteBranchCommit should not be called by release publish tests."
+    );
+  }
+
   async pushBranch(
     input: PushBranchInput
   ): Promise<GitAutomationResult<PushBranchResult>> {

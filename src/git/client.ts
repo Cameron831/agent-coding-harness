@@ -1,6 +1,8 @@
 import type {
   CleanupWorktreeInput,
   CleanupWorktreeResult,
+  CheckRemoteBranchCommitInput,
+  CheckRemoteBranchCommitResult,
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
@@ -29,6 +31,9 @@ export interface GitAutomationClient {
     input: GetChangedFilesInput
   ): Promise<GitAutomationResult<GetChangedFilesResult>>;
   commit(input: CommitInput): Promise<GitAutomationResult<CommitResult>>;
+  checkRemoteBranchCommit(
+    input: CheckRemoteBranchCommitInput
+  ): Promise<GitAutomationResult<CheckRemoteBranchCommitResult>>;
   pushBranch(input: PushBranchInput): Promise<GitAutomationResult<PushBranchResult>>;
   cleanupWorktree(
     input: CleanupWorktreeInput

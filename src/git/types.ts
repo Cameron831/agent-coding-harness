@@ -79,6 +79,22 @@ export interface PushBranchResult extends TargetWorktreePath {
   remoteName: string;
 }
 
+export type RemoteBranchCommitStatus = "matches" | "missing" | "different";
+
+export interface CheckRemoteBranchCommitInput extends TargetWorktreePath {
+  branchName: string;
+  remoteName?: string;
+  expectedCommit: string;
+}
+
+export interface CheckRemoteBranchCommitResult extends TargetWorktreePath {
+  branchName: string;
+  remoteName: string;
+  expectedCommit: string;
+  status: RemoteBranchCommitStatus;
+  actualCommit?: string;
+}
+
 export interface CleanupWorktreeInput extends TargetRepositoryPath, TargetWorktreePath {
   force?: boolean;
 }
