@@ -277,6 +277,8 @@ export type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  FetchRemoteTrackingRefInput,
+  FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,

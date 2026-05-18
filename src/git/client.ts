@@ -6,6 +6,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  FetchRemoteTrackingRefInput,
+  FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,
@@ -21,6 +23,9 @@ import type {
 } from "./types.js";
 
 export interface GitAutomationClient {
+  fetchRemoteTrackingRef(
+    input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>>;
   createWorktree(
     input: CreateWorktreeInput
   ): Promise<GitAutomationResult<WorktreeDetails>>;

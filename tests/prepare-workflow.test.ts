@@ -11,6 +11,8 @@ import {
   type CreateIssueInput,
   type CreatePullRequestInput,
   type CreateWorktreeInput,
+  type FetchRemoteTrackingRefInput,
+  type FetchRemoteTrackingRefResult,
   type GetChangedFilesInput,
   type GetChangedFilesResult,
   type GetDiffInput,
@@ -124,6 +126,14 @@ class FakeGitClient implements GitAutomationClient {
     _input: CreateWorktreeInput
   ): Promise<GitAutomationResult<WorktreeDetails>> {
     throw new Error("createWorktree should not be called by prepare workflow tests.");
+  }
+
+  async fetchRemoteTrackingRef(
+    _input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>> {
+    throw new Error(
+      "fetchRemoteTrackingRef should not be called by prepare workflow tests."
+    );
   }
 
   async stageFiles(
@@ -335,16 +345,21 @@ test("prepare workflow writes prepare artifacts incrementally as data becomes av
 });
 
 test("prepare workflow success exposes artifact paths, branch, and worktree path", async () => {
+  const prepareWorkspaceInputs: PrepareIssueWorkspaceInput[] = [];
+
   const result = await runPrepareWorkflow(options, {
     githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
     gitClient: new FakeGitClient(),
-    prepareWorkspace: async () => ({
-      ok: true,
-      value: {
-        branchName: "47-add-prepare-workflow",
-        targetWorktreePath: "C:/repos/worktrees/issue-47"
-      }
-    }),
+    prepareWorkspace: async (input) => {
+      prepareWorkspaceInputs.push(input);
+      return {
+        ok: true,
+        value: {
+          branchName: "47-add-prepare-workflow",
+          targetWorktreePath: "C:/repos/worktrees/issue-47"
+        }
+      };
+    },
     renderPrompt: async () => "prompt",
     writeRunArtifact: async () => runArtifactResult({ status: "preparing" }),
     writeIssueArtifact: async () => issueArtifactResult(),
@@ -368,6 +383,15 @@ test("prepare workflow success exposes artifact paths, branch, and worktree path
       artifacts: artifactResult()
     }
   });
+  assert.deepEqual(prepareWorkspaceInputs, [
+    {
+      issueNumber: fetchedIssue.issueNumber,
+      issueTitle: fetchedIssue.title,
+      targetRepositoryPath: options.targetRepositoryPath,
+      worktreeParentPath: options.worktreeParentPath,
+      baseRef: "origin/main"
+    }
+  ]);
 });
 
 test("prepare workflow can create the GitHub client through dependency injection", async () => {

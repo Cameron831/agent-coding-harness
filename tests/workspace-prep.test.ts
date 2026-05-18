@@ -7,6 +7,8 @@ import {
   type CommitInput,
   type CommitResult,
   type CreateWorktreeInput,
+  type FetchRemoteTrackingRefInput,
+  type FetchRemoteTrackingRefResult,
   type GetChangedFilesInput,
   type GetChangedFilesResult,
   type GetDiffInput,
@@ -30,7 +32,9 @@ const validInput = {
 };
 
 class FakeGitAutomationClient implements GitAutomationClient {
+  readonly fetchRemoteTrackingRefInputs: FetchRemoteTrackingRefInput[] = [];
   readonly createWorktreeInputs: CreateWorktreeInput[] = [];
+  readonly calls: string[] = [];
 
   constructor(
     private readonly createWorktreeResult: GitAutomationResult<WorktreeDetails> = {
@@ -40,12 +44,29 @@ class FakeGitAutomationClient implements GitAutomationClient {
         targetWorktreePath: "C:/repos/worktrees/issue-42",
         branchName: "42-add-workspace-prep-helper"
       }
+    },
+    private readonly fetchRemoteTrackingRefResult: GitAutomationResult<FetchRemoteTrackingRefResult> = {
+      ok: true,
+      value: {
+        targetRepositoryPath: "C:/repos/target",
+        remoteName: "origin",
+        branchName: "main"
+      }
     }
   ) {}
+
+  async fetchRemoteTrackingRef(
+    input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>> {
+    this.calls.push("fetchRemoteTrackingRef");
+    this.fetchRemoteTrackingRefInputs.push(input);
+    return this.fetchRemoteTrackingRefResult;
+  }
 
   async createWorktree(
     input: CreateWorktreeInput
   ): Promise<GitAutomationResult<WorktreeDetails>> {
+    this.calls.push("createWorktree");
     this.createWorktreeInputs.push(input);
     return this.createWorktreeResult;
   }
@@ -154,6 +175,53 @@ test("prepareIssueWorkspace passes derived createWorktree input through the Git 
   ]);
 });
 
+test("prepareIssueWorkspace defaults to origin/main when baseRef is omitted", async () => {
+  const gitClient = new FakeGitAutomationClient();
+
+  await prepareIssueWorkspace(validInput, { gitClient });
+
+  assert.deepEqual(gitClient.fetchRemoteTrackingRefInputs, [
+    {
+      targetRepositoryPath: "C:/repos/target",
+      remoteName: "origin",
+      branchName: "main"
+    }
+  ]);
+  assert.deepEqual(gitClient.createWorktreeInputs, [
+    {
+      targetRepositoryPath: "C:/repos/target",
+      branchName: "42-add-workspace-prep-helper",
+      targetWorktreePath: "C:/repos/worktrees/issue-42",
+      baseRef: "origin/main"
+    }
+  ]);
+});
+
+test("prepareIssueWorkspace fetches slashy branch base refs before createWorktree", async () => {
+  const gitClient = new FakeGitAutomationClient();
+
+  await prepareIssueWorkspace(
+    { ...validInput, baseRef: "upstream/release/2026-05-18" },
+    { gitClient }
+  );
+
+  assert.deepEqual(gitClient.calls, [
+    "fetchRemoteTrackingRef",
+    "createWorktree"
+  ]);
+  assert.deepEqual(gitClient.fetchRemoteTrackingRefInputs, [
+    {
+      targetRepositoryPath: "C:/repos/target",
+      remoteName: "upstream",
+      branchName: "release/2026-05-18"
+    }
+  ]);
+  assert.equal(
+    gitClient.createWorktreeInputs[0]?.baseRef,
+    "upstream/release/2026-05-18"
+  );
+});
+
 test("prepareIssueWorkspace returns the derived branch and worktree path on success", async () => {
   const gitClient = new FakeGitAutomationClient();
 
@@ -177,7 +245,14 @@ test("prepareIssueWorkspace validates input before invoking Git", async () => {
     ["empty title slug", { issueTitle: "!!!" }],
     ["blank target repository path", { targetRepositoryPath: "\t" }],
     ["blank worktree parent path", { worktreeParentPath: "" }],
-    ["blank base ref", { baseRef: "\n" }]
+    ["blank base ref", { baseRef: "\n" }],
+    ["bare branch base ref", { baseRef: "main" }],
+    ["sha-like base ref", { baseRef: "abc123" }],
+    ["refs head base ref", { baseRef: "refs/heads/main" }],
+    ["leading slash base ref", { baseRef: "/main" }],
+    ["trailing slash base ref", { baseRef: "origin/" }],
+    ["empty branch segment base ref", { baseRef: "origin//main" }],
+    ["whitespace base ref", { baseRef: "origin/feature branch" }]
   ];
 
   for (const [caseName, override] of cases) {
@@ -190,8 +265,26 @@ test("prepareIssueWorkspace validates input before invoking Git", async () => {
 
     assert.equal(result.ok, false, caseName);
     assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(gitClient.fetchRemoteTrackingRefInputs, [], caseName);
     assert.deepEqual(gitClient.createWorktreeInputs, [], caseName);
   }
+});
+
+test("prepareIssueWorkspace returns fetch failures without creating a worktree", async () => {
+  const fetchFailure: GitAutomationResult<FetchRemoteTrackingRefResult> = {
+    ok: false,
+    error: {
+      code: "unknown",
+      message: "fatal: could not fetch"
+    }
+  };
+  const gitClient = new FakeGitAutomationClient(undefined, fetchFailure);
+
+  const result = await prepareIssueWorkspace(validInput, { gitClient });
+
+  assert.equal(result, fetchFailure);
+  assert.deepEqual(gitClient.calls, ["fetchRemoteTrackingRef"]);
+  assert.deepEqual(gitClient.createWorktreeInputs, []);
 });
 
 test("prepareIssueWorkspace propagates Git createWorktree failures unchanged", async () => {

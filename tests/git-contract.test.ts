@@ -5,6 +5,7 @@ import type {
   CheckRemoteBranchCommitResult,
   CleanupWorktreeResult,
   CommitResult,
+  FetchRemoteTrackingRefResult,
   GetChangedFilesResult,
   GetDiffResult,
   GetHeadResult,
@@ -29,6 +30,13 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
       return ok<WorktreeDetails>({
         targetRepositoryPath: input.targetRepositoryPath,
         targetWorktreePath: input.targetWorktreePath,
+        branchName: input.branchName
+      });
+    },
+    async fetchRemoteTrackingRef(input) {
+      return ok<FetchRemoteTrackingRefResult>({
+        targetRepositoryPath: input.targetRepositoryPath,
+        remoteName: input.remoteName,
         branchName: input.branchName
       });
     },
@@ -90,11 +98,16 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     }
   };
 
+  const fetched = await fakeClient.fetchRemoteTrackingRef({
+    targetRepositoryPath,
+    remoteName: "origin",
+    branchName: "main"
+  });
   const worktree = await fakeClient.createWorktree({
     targetRepositoryPath,
     targetWorktreePath,
     branchName: "issue-20-git-contract",
-    baseRef: "main"
+    baseRef: "origin/main"
   });
   const staged = await fakeClient.stageFiles({
     targetWorktreePath,
@@ -131,6 +144,7 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     force: true
   });
 
+  assert.equal(fetched.ok && fetched.value.remoteName, "origin");
   assert.equal(worktree.ok && worktree.value.targetRepositoryPath, targetRepositoryPath);
   assert.equal(staged.ok && staged.value.files.length, 2);
   assert.equal(diff.ok && diff.value.diff, "diff --git a/src/index.ts b/src/index.ts\n");

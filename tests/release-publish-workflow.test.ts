@@ -19,6 +19,8 @@ import {
   type CreateIssueInput,
   type CreatePullRequestInput,
   type CreateWorktreeInput,
+  type FetchRemoteTrackingRefInput,
+  type FetchRemoteTrackingRefResult,
   type GetChangedFilesInput,
   type GetChangedFilesResult,
   type GetDiffInput,
@@ -102,6 +104,14 @@ class FakeGitClient implements GitAutomationClient {
     _input: CreateWorktreeInput
   ): Promise<GitAutomationResult<WorktreeDetails>> {
     throw new Error("createWorktree should not be called by release publish tests.");
+  }
+
+  async fetchRemoteTrackingRef(
+    _input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>> {
+    throw new Error(
+      "fetchRemoteTrackingRef should not be called by release publish tests."
+    );
   }
 
   async stageFiles(

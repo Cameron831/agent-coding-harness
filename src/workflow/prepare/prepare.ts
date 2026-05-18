@@ -35,6 +35,7 @@ import {
   type PrepareIssueWorkspaceInput,
   type PrepareIssueWorkspaceResult
 } from "./workspace-prep.js";
+import { DEFAULT_PREPARE_BASE_REF } from "./base-ref.js";
 
 export interface PrepareWorkflowSettings {
   baseRef?: string;
@@ -307,7 +308,7 @@ function resolveSettings(
   const settings = options.settings;
 
   return {
-    baseRef: settings?.baseRef ?? options.baseRef,
+    baseRef: settings?.baseRef ?? options.baseRef ?? DEFAULT_PREPARE_BASE_REF,
     promptVariant:
       settings?.promptVariant ??
       settings?.variant ??

@@ -14,6 +14,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  FetchRemoteTrackingRefInput,
+  FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,
@@ -33,6 +35,35 @@ export class LocalGitAutomationClient implements GitAutomationClient {
   constructor(
     private readonly runner: GitCommandRunner = new LocalGitCommandRunner()
   ) {}
+
+  async fetchRemoteTrackingRef(
+    input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>> {
+    const validationError = validateFetchRemoteTrackingRefInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetRepositoryPath,
+      "fetch",
+      input.remoteName,
+      `refs/heads/${input.branchName}:refs/remotes/${input.remoteName}/${input.branchName}`
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetRepositoryPath: input.targetRepositoryPath,
+        remoteName: input.remoteName,
+        branchName: input.branchName
+      }
+    };
+  }
 
   async createWorktree(
     input: CreateWorktreeInput
@@ -398,6 +429,36 @@ export class LocalGitAutomationClient implements GitAutomationClient {
 
     return { ok: true, value: result };
   }
+}
+
+function validateFetchRemoteTrackingRefInput(
+  input: FetchRemoteTrackingRefInput
+): GitAutomationError | undefined {
+  if (
+    typeof input.targetRepositoryPath !== "string" ||
+    input.targetRepositoryPath.trim() === ""
+  ) {
+    return {
+      code: "validation_failed",
+      message: "Target repository path is required."
+    };
+  }
+
+  if (typeof input.remoteName !== "string" || input.remoteName.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Remote name is required."
+    };
+  }
+
+  if (typeof input.branchName !== "string" || input.branchName.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Branch name is required."
+    };
+  }
+
+  return undefined;
 }
 
 function validateCreateWorktreeInput(
