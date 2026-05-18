@@ -11,6 +11,8 @@ import {
   type AutomationResult,
   type CleanupWorktreeInput,
   type CleanupWorktreeResult,
+  type CheckRemoteBranchCommitInput,
+  type CheckRemoteBranchCommitResult,
   type CloseIssueInput,
   type CommitInput,
   type CommitResult,
@@ -76,8 +78,10 @@ const options = {
 
 class FakeGitClient implements GitAutomationClient {
   readonly getChangedFilesInputs: GetChangedFilesInput[] = [];
+  readonly getHeadInputs: GetHeadInput[] = [];
   readonly stageFilesInputs: StageFilesInput[] = [];
   readonly commitInputs: CommitInput[] = [];
+  readonly checkRemoteBranchCommitInputs: CheckRemoteBranchCommitInput[] = [];
   readonly pushBranchInputs: PushBranchInput[] = [];
   readonly cleanupWorktreeInputs: CleanupWorktreeInput[] = [];
 
@@ -85,8 +89,10 @@ class FakeGitClient implements GitAutomationClient {
     private readonly events: string[],
     private readonly overrides: {
       changedFiles?: GitAutomationResult<GetChangedFilesResult>;
+      head?: GitAutomationResult<GetHeadResult>;
       stageFiles?: GitAutomationResult<StageFilesResult>;
       commit?: GitAutomationResult<CommitResult>;
+      remoteBranch?: GitAutomationResult<CheckRemoteBranchCommitResult>;
       pushBranch?: GitAutomationResult<PushBranchResult>;
       cleanupWorktree?: GitAutomationResult<CleanupWorktreeResult>;
     } = {}
@@ -118,8 +124,18 @@ class FakeGitClient implements GitAutomationClient {
     throw new Error("getDiff should not be called by release publish tests.");
   }
 
-  async getHead(_input: GetHeadInput): Promise<GitAutomationResult<GetHeadResult>> {
-    throw new Error("getHead should not be called by release publish tests.");
+  async getHead(input: GetHeadInput): Promise<GitAutomationResult<GetHeadResult>> {
+    this.events.push("getHead");
+    this.getHeadInputs.push(input);
+    return (
+      this.overrides.head ?? {
+        ok: true,
+        value: {
+          targetWorktreePath: input.targetWorktreePath,
+          head: run.beforeHead
+        }
+      }
+    );
   }
 
   async getChangedFiles(
@@ -152,9 +168,22 @@ class FakeGitClient implements GitAutomationClient {
     );
   }
 
-  async checkRemoteBranchCommit(): Promise<never> {
-    throw new Error(
-      "checkRemoteBranchCommit should not be called by release publish tests."
+  async checkRemoteBranchCommit(
+    input: CheckRemoteBranchCommitInput
+  ): Promise<GitAutomationResult<CheckRemoteBranchCommitResult>> {
+    this.events.push("checkRemoteBranchCommit");
+    this.checkRemoteBranchCommitInputs.push(input);
+    return (
+      this.overrides.remoteBranch ?? {
+        ok: true,
+        value: {
+          targetWorktreePath: input.targetWorktreePath,
+          branchName: input.branchName,
+          remoteName: input.remoteName ?? "origin",
+          expectedCommit: input.expectedCommit,
+          status: "missing"
+        }
+      }
     );
   }
 
@@ -194,6 +223,7 @@ class FakeGitClient implements GitAutomationClient {
 }
 
 class FakeGitHubClient implements GitHubAutomationClient {
+  readonly listOpenPullRequestsInputs: ListOpenPullRequestsInput[] = [];
   readonly createPullRequestInputs: CreatePullRequestInput[] = [];
 
   constructor(
@@ -210,6 +240,10 @@ class FakeGitHubClient implements GitHubAutomationClient {
         head: callerBranch,
         body: renderReleasePullRequestBody(release)
       }
+    },
+    private readonly listResult: AutomationResult<PullRequestDetails[]> = {
+      ok: true,
+      value: []
     }
   ) {}
 
@@ -232,11 +266,11 @@ class FakeGitHubClient implements GitHubAutomationClient {
   }
 
   async listOpenPullRequests(
-    _input: ListOpenPullRequestsInput
+    input: ListOpenPullRequestsInput
   ): Promise<AutomationResult<PullRequestDetails[]>> {
-    throw new Error(
-      "listOpenPullRequests should not be called by release publish tests."
-    );
+    this.events.push("listOpenPullRequests");
+    this.listOpenPullRequestsInputs.push(input);
+    return this.listResult;
   }
 
   async createPullRequest(
@@ -274,15 +308,21 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
     assert.deepEqual(events, [
       "updateRunStatus:publishing",
       "getChangedFiles",
+      "getHead",
       "stageFiles",
       "commit",
+      "checkRemoteBranchCommit",
       "pushBranch",
+      "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
       "updateRunStatus:published",
       "cleanupWorktree"
     ]);
     assert.deepEqual(gitClient.getChangedFilesInputs, [
+      { targetWorktreePath: callerWorktreePath }
+    ]);
+    assert.deepEqual(gitClient.getHeadInputs, [
       { targetWorktreePath: callerWorktreePath }
     ]);
     assert.deepEqual(gitClient.stageFilesInputs, [
@@ -295,6 +335,13 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
       {
         targetWorktreePath: callerWorktreePath,
         message: release.commit_message
+      }
+    ]);
+    assert.deepEqual(gitClient.checkRemoteBranchCommitInputs, [
+      {
+        targetWorktreePath: callerWorktreePath,
+        branchName: callerBranch,
+        expectedCommit: "commit123"
       }
     ]);
     assert.deepEqual(gitClient.pushBranchInputs, [
@@ -314,6 +361,13 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
         linkedIssueNumber: 70
       }
     ]);
+    assert.deepEqual(githubClient.listOpenPullRequestsInputs, [
+      {
+        repository: options.repository,
+        base: options.base,
+        head: callerBranch
+      }
+    ]);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, [
       {
         targetRepositoryPath: options.targetRepositoryPath,
@@ -331,9 +385,12 @@ test("release publish workflow commits, pushes, creates PR, cleans up, and write
     assert.equal(persistedRun.pullRequestNumber, undefined);
     assert.equal(persistedRun.cleanup, undefined);
 
-    assert.equal(result.ok && result.value.commit.commitSha, "commit123");
-    assert.equal(result.ok && result.value.push.branchName, callerBranch);
+    assert.equal(result.ok && result.value.commit?.commitSha, "commit123");
+    assert.equal(result.ok && result.value.commit?.reused, false);
+    assert.equal(result.ok && result.value.push?.branchName, callerBranch);
+    assert.equal(result.ok && result.value.push?.reused, false);
     assert.equal(result.ok && result.value.pullRequest.pullRequestNumber, 70);
+    assert.equal(result.ok && result.value.pullRequest.reused, false);
     assert.equal(
       result.ok && result.value.pullRequest.url,
       "https://github.com/owner/name/pull/70"
@@ -360,10 +417,128 @@ test("release publish workflow defaults to the run artifact beside release.json"
   });
 });
 
+test("published run with PR URL retries cleanup only", async () => {
+  await withReleaseArtifacts(
+    async (_root, releasePath, runPath) => {
+      const events: string[] = [];
+      const gitClient = new FakeGitClient(events);
+      const githubClient = new FakeGitHubClient(events);
+
+      const result = await runReleasePublishWorkflow(
+        { ...options, releasePath, runPath },
+        {
+          gitClient,
+          githubClient,
+          loadRelease: async () => {
+            throw new Error("release should not be loaded");
+          },
+          updateRunStatus: async (input) => {
+            events.push(`updateRunStatus:${input.status}`);
+            return updateRunStatus(input);
+          },
+          writePullRequestRunArtifact: async (input) => {
+            events.push("writePullRequest");
+            return writePullRequestRunArtifact(input);
+          }
+        }
+      );
+
+      assert.equal(result.ok, true);
+      assert.deepEqual(events, ["cleanupWorktree"]);
+      assert.deepEqual(gitClient.stageFilesInputs, []);
+      assert.deepEqual(gitClient.commitInputs, []);
+      assert.deepEqual(gitClient.pushBranchInputs, []);
+      assert.deepEqual(githubClient.listOpenPullRequestsInputs, []);
+      assert.deepEqual(githubClient.createPullRequestInputs, []);
+      assert.equal(result.ok && result.value.commit, undefined);
+      assert.equal(result.ok && result.value.push, undefined);
+      assert.equal(
+        result.ok && result.value.pullRequest.url,
+        "https://github.com/owner/name/pull/70"
+      );
+      assert.equal(result.ok && result.value.pullRequest.reused, true);
+
+      const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      assert.equal(persistedRun.status, "published");
+      assert.equal(
+        persistedRun.pullRequestURL,
+        "https://github.com/owner/name/pull/70"
+      );
+    },
+    {
+      ...run,
+      status: "published",
+      pullRequestURL: "https://github.com/owner/name/pull/70"
+    }
+  );
+});
+
+test("published cleanup failure remains retryable without publication side effects", async () => {
+  await withReleaseArtifacts(
+    async (_root, releasePath, runPath) => {
+      const events: string[] = [];
+      const gitClient = new FakeGitClient(events, {
+        cleanupWorktree: {
+          ok: false,
+          error: gitError("worktree still dirty")
+        }
+      });
+      const githubClient = new FakeGitHubClient(events);
+
+      const result = await runReleasePublishWorkflow(
+        { ...options, releasePath, runPath },
+        {
+          gitClient,
+          githubClient,
+          loadRelease: async () => {
+            throw new Error("release should not be loaded");
+          },
+          updateRunStatus: async (input) => {
+            events.push(`updateRunStatus:${input.status}`);
+            return updateRunStatus(input);
+          },
+          writePullRequestRunArtifact: async (input) => {
+            events.push("writePullRequest");
+            return writePullRequestRunArtifact(input);
+          }
+        }
+      );
+
+      assert.equal(result.ok, false);
+      assert.equal(result.ok || result.error.stage, "cleanup");
+      assert.deepEqual(events, ["cleanupWorktree"]);
+      assert.deepEqual(gitClient.stageFilesInputs, []);
+      assert.deepEqual(gitClient.commitInputs, []);
+      assert.deepEqual(gitClient.pushBranchInputs, []);
+      assert.deepEqual(githubClient.listOpenPullRequestsInputs, []);
+      assert.deepEqual(githubClient.createPullRequestInputs, []);
+
+      const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      assert.equal(persistedRun.status, "published");
+      assert.equal(
+        persistedRun.pullRequestURL,
+        "https://github.com/owner/name/pull/70"
+      );
+    },
+    {
+      ...run,
+      status: "published",
+      pullRequestURL: "https://github.com/owner/name/pull/70"
+    }
+  );
+});
+
 test("invalid release metadata fails before run artifact mutation", async () => {
   let publishingWritten = false;
 
   const result = await runReleasePublishWorkflow(options, {
+    loadRunArtifact: async () => run,
     loadRelease: async () => ({
       ok: false,
       errors: [{ message: "Release metadata field commit_message is required." }]
@@ -379,7 +554,92 @@ test("invalid release metadata fails before run artifact mutation", async () => 
   assert.equal(publishingWritten, false);
 });
 
-test("no changed files fails at staging before commit and cleanup", async () => {
+test("malformed run artifact fails before Git or GitHub mutation", async () => {
+  const cases = [
+    {
+      name: "malformed JSON",
+      contents: "{",
+      expectedMessage: /valid JSON/
+    },
+    {
+      name: "non-object JSON",
+      contents: "[]",
+      expectedMessage: /JSON object/
+    }
+  ];
+
+  for (const runCase of cases) {
+    await withRawRunArtifact(runCase.contents, async (releasePath, runPath) => {
+      const events: string[] = [];
+      const gitClient = new FakeGitClient(events);
+      const githubClient = new FakeGitHubClient(events);
+
+      const result = await runReleasePublishWorkflow(
+        { ...options, releasePath, runPath },
+        {
+          gitClient,
+          githubClient,
+          updateRunStatus: async (input) => {
+            events.push(`updateRunStatus:${input.status}`);
+            return updateRunStatus(input);
+          }
+        }
+      );
+
+      assert.equal(result.ok, false, runCase.name);
+      assert.equal(result.ok || result.error.stage, "run_validation", runCase.name);
+      assert.match(result.ok ? "" : result.error.message, runCase.expectedMessage);
+      assert.deepEqual(events, [], runCase.name);
+      assert.deepEqual(gitClient.stageFilesInputs, [], runCase.name);
+      assert.deepEqual(gitClient.commitInputs, [], runCase.name);
+      assert.deepEqual(gitClient.pushBranchInputs, [], runCase.name);
+      assert.deepEqual(githubClient.listOpenPullRequestsInputs, [], runCase.name);
+      assert.deepEqual(githubClient.createPullRequestInputs, [], runCase.name);
+    });
+  }
+});
+
+test("missing beforeHead fails before publishing reconciliation", async () => {
+  const cases: Record<string, unknown>[] = [
+    {
+      ...run,
+      beforeHead: undefined
+    },
+    {
+      ...run,
+      status: "published",
+      pullRequestURL: " ",
+      beforeHead: undefined
+    }
+  ];
+
+  for (const runArtifact of cases) {
+    await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+      const events: string[] = [];
+      const gitClient = new FakeGitClient(events);
+
+      const result = await runReleasePublishWorkflow(
+        { ...options, releasePath, runPath },
+        {
+          gitClient,
+          githubClient: new FakeGitHubClient(events),
+          updateRunStatus: async (input) => {
+            events.push(`updateRunStatus:${input.status}`);
+            return updateRunStatus(input);
+          }
+        }
+      );
+
+      assert.equal(result.ok, false);
+      assert.equal(result.ok || result.error.stage, "run_validation");
+      assert.match(result.ok ? "" : result.error.message, /beforeHead/);
+      assert.deepEqual(events, []);
+      assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+    }, runArtifact);
+  }
+});
+
+test("no changed files and unchanged HEAD fails at staging before commit and cleanup", async () => {
   await withReleaseArtifacts(async (_root, releasePath, runPath) => {
     const events: string[] = [];
     const gitClient = new FakeGitClient(events, {
@@ -406,9 +666,238 @@ test("no changed files fails at staging before commit and cleanup", async () => 
 
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.error.stage, "staging");
-    assert.deepEqual(events, ["updateRunStatus:publishing", "getChangedFiles"]);
+    assert.match(
+      result.ok ? "" : result.error.message,
+      /current HEAD matches the recorded beforeHead/
+    );
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "getHead"
+    ]);
+    assert.deepEqual(gitClient.stageFilesInputs, []);
     assert.deepEqual(gitClient.commitInputs, []);
     assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+  });
+});
+
+test("release publish workflow reuses an existing local release commit", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events, {
+      changedFiles: {
+        ok: true,
+        value: {
+          targetWorktreePath: callerWorktreePath,
+          files: []
+        }
+      },
+      head: {
+        ok: true,
+        value: {
+          targetWorktreePath: callerWorktreePath,
+          head: "commit123"
+        }
+      }
+    });
+    const githubClient = new FakeGitHubClient(events);
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient,
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "getHead",
+      "checkRemoteBranchCommit",
+      "pushBranch",
+      "listOpenPullRequests",
+      "createPullRequest",
+      "writePullRequest",
+      "updateRunStatus:published",
+      "cleanupWorktree"
+    ]);
+    assert.deepEqual(gitClient.stageFilesInputs, []);
+    assert.deepEqual(gitClient.commitInputs, []);
+    assert.equal(result.ok && result.value.commit?.commitSha, "commit123");
+    assert.equal(result.ok && result.value.commit?.reused, true);
+  });
+});
+
+test("release publish workflow skips push when the remote branch already has the release commit", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events, {
+      remoteBranch: {
+        ok: true,
+        value: {
+          targetWorktreePath: callerWorktreePath,
+          branchName: callerBranch,
+          remoteName: "origin",
+          expectedCommit: "commit123",
+          status: "matches",
+          actualCommit: "commit123"
+        }
+      }
+    });
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient: new FakeGitHubClient(events),
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(gitClient.pushBranchInputs, []);
+    assert.equal(result.ok && result.value.push?.reused, true);
+    assert.equal(result.ok && result.value.push?.branchName, callerBranch);
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "getHead",
+      "stageFiles",
+      "commit",
+      "checkRemoteBranchCommit",
+      "listOpenPullRequests",
+      "createPullRequest",
+      "writePullRequest",
+      "updateRunStatus:published",
+      "cleanupWorktree"
+    ]);
+  });
+});
+
+test("release publish workflow reuses exactly one matching open pull request", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const githubClient = new FakeGitHubClient(
+      events,
+      undefined,
+      {
+        ok: true,
+        value: [
+          {
+            repository: options.repository,
+            pullRequestNumber: 71,
+            title: "Existing release PR",
+            state: "open",
+            url: "https://github.com/owner/name/pull/71",
+            base: options.base,
+            head: callerBranch
+          }
+        ]
+      }
+    );
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient: new FakeGitClient(events),
+        githubClient,
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(githubClient.createPullRequestInputs, []);
+    assert.equal(result.ok && result.value.pullRequest.pullRequestNumber, 71);
+    assert.equal(result.ok && result.value.pullRequest.reused, true);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/71");
+  });
+});
+
+test("multiple matching open pull requests fail before PR creation", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events);
+    const githubClient = new FakeGitHubClient(
+      events,
+      undefined,
+      {
+        ok: true,
+        value: [
+          {
+            repository: options.repository,
+            pullRequestNumber: 71,
+            title: "Existing release PR",
+            state: "open",
+            url: "https://github.com/owner/name/pull/71",
+            base: options.base,
+            head: callerBranch
+          },
+          {
+            repository: options.repository,
+            pullRequestNumber: 72,
+            title: "Duplicate release PR",
+            state: "open",
+            url: "https://github.com/owner/name/pull/72",
+            base: options.base,
+            head: callerBranch
+          }
+        ]
+      }
+    );
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient,
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.error.stage, "pr_creation");
+    assert.match(result.ok ? "" : result.error.message, /Multiple open pull requests/);
+    assert.deepEqual(githubClient.createPullRequestInputs, []);
+    assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.pullRequestURL, undefined);
   });
 });
 
@@ -465,6 +954,7 @@ test("publishing artifact write failure stops before Git or GitHub mutation", as
   const events: string[] = [];
 
   const result = await runReleasePublishWorkflow(options, {
+    loadRunArtifact: async () => run,
     loadRelease: async () => ({ ok: true, value: release }),
     gitClient: new FakeGitClient(events),
     githubClient: new FakeGitHubClient(events),
@@ -596,9 +1086,12 @@ test("cleanup failure returns after the run artifact is marked published", async
     assert.deepEqual(events, [
       "updateRunStatus:publishing",
       "getChangedFiles",
+      "getHead",
       "stageFiles",
       "commit",
+      "checkRemoteBranchCommit",
       "pushBranch",
+      "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
       "updateRunStatus:published",
@@ -642,9 +1135,12 @@ test("PR URL write failure returns artifact_write before cleanup", async () => {
     assert.deepEqual(events, [
       "updateRunStatus:publishing",
       "getChangedFiles",
+      "getHead",
       "stageFiles",
       "commit",
+      "checkRemoteBranchCommit",
       "pushBranch",
+      "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest"
     ]);
@@ -689,9 +1185,12 @@ test("published status write failure returns artifact_write before cleanup", asy
     assert.deepEqual(events, [
       "updateRunStatus:publishing",
       "getChangedFiles",
+      "getHead",
       "stageFiles",
       "commit",
+      "checkRemoteBranchCommit",
       "pushBranch",
+      "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
       "updateRunStatus:published"
@@ -723,6 +1222,23 @@ async function withReleaseArtifacts(
 
   try {
     await callback(root, releasePath, runPath);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function withRawRunArtifact(
+  runContents: string,
+  callback: (releasePath: string, runPath: string) => Promise<void>
+): Promise<void> {
+  const root = await mkdtemp(path.join(tmpdir(), "release-publish-workflow-"));
+  const releasePath = path.join(root, "release.json");
+  const runPath = path.join(root, "run.json");
+  await writeFile(releasePath, `${JSON.stringify(release, null, 2)}\n`, "utf8");
+  await writeFile(runPath, runContents, "utf8");
+
+  try {
+    await callback(releasePath, runPath);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

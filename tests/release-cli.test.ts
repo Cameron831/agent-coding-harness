@@ -37,12 +37,14 @@ const successResult: ReleasePublishWorkflowResult = {
     },
     commit: {
       targetWorktreePath: "C:/repos/worktrees/issue-74",
-      commitSha: "abc123commit"
+      commitSha: "abc123commit",
+      reused: false
     },
     push: {
       targetWorktreePath: "C:/repos/worktrees/issue-74",
       remoteName: "origin",
-      branchName: "74-release-cli"
+      branchName: "74-release-cli",
+      reused: false
     },
     pullRequest: {
       repository: { owner: "owner", name: "name" },
@@ -51,7 +53,8 @@ const successResult: ReleasePublishWorkflowResult = {
       state: "open",
       url: "https://github.com/owner/name/pull/74",
       head: "74-release-cli",
-      base: "main"
+      base: "main",
+      reused: false
     },
     cleanup: {
       targetRepositoryPath: "C:/repos/target",

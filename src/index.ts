@@ -140,9 +140,12 @@ export type {
 } from "./workflow/release/artifact-writer.js";
 export type {
   ReleasePublishWorkflowDependencies,
+  ReleasePublishCommitResult,
   ReleasePublishWorkflowError,
   ReleasePublishWorkflowFailureStage,
   ReleasePublishWorkflowOptions,
+  ReleasePublishPullRequestResult,
+  ReleasePublishPushResult,
   ReleasePublishWorkflowResult,
   ReleasePublishWorkflowSuccess
 } from "./workflow/release/publish.js";
