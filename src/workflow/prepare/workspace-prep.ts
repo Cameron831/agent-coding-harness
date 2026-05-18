@@ -4,6 +4,11 @@ import type {
   GitAutomationError,
   GitAutomationResult
 } from "../../git/types.js";
+import {
+  DEFAULT_PREPARE_BASE_REF,
+  invalidPrepareBaseRefMessage,
+  parsePrepareBaseRef
+} from "./base-ref.js";
 
 export interface PrepareIssueWorkspaceInput {
   issueNumber: number;
@@ -48,12 +53,29 @@ export async function prepareIssueWorkspace(
     `issue-${input.issueNumber}`
   );
   const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
+  const baseRef = parsePrepareBaseRef(input.baseRef ?? DEFAULT_PREPARE_BASE_REF);
+  if (baseRef === undefined) {
+    return failure({
+      code: "validation_failed",
+      message: invalidPrepareBaseRefMessage
+    });
+  }
+
+  const fetchResult = await gitClient.fetchRemoteTrackingRef({
+    targetRepositoryPath: input.targetRepositoryPath,
+    remoteName: baseRef.remoteName,
+    branchName: baseRef.branchName
+  });
+
+  if (!fetchResult.ok) {
+    return fetchResult;
+  }
 
   const result = await gitClient.createWorktree({
     targetRepositoryPath: input.targetRepositoryPath,
     branchName,
     targetWorktreePath,
-    ...(input.baseRef !== undefined ? { baseRef: input.baseRef } : {})
+    baseRef: baseRef.baseRef
   });
 
   if (!result.ok) {
@@ -106,13 +128,10 @@ function validateInput(
     };
   }
 
-  if (
-    input.baseRef !== undefined &&
-    (typeof input.baseRef !== "string" || input.baseRef.trim() === "")
-  ) {
+  if (input.baseRef !== undefined && typeof input.baseRef !== "string") {
     return {
       code: "validation_failed",
-      message: "Base ref must be non-empty when supplied."
+      message: invalidPrepareBaseRefMessage
     };
   }
 

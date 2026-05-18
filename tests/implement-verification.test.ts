@@ -15,6 +15,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  FetchRemoteTrackingRefInput,
+  FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
   GetChangedFilesResult,
   GetDiffInput,
@@ -50,6 +52,12 @@ class FakeGitClient implements GitAutomationClient {
   }
 
   async createWorktree(): Promise<GitAutomationResult<WorktreeDetails>> {
+    throw new Error("not used");
+  }
+
+  async fetchRemoteTrackingRef(
+    _input: FetchRemoteTrackingRefInput
+  ): Promise<GitAutomationResult<FetchRemoteTrackingRefResult>> {
     throw new Error("not used");
   }
 

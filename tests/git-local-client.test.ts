@@ -6,6 +6,7 @@ import {
   type CleanupWorktreeInput,
   type CommitInput,
   type CreateWorktreeInput,
+  type FetchRemoteTrackingRefInput,
   type GetChangedFilesInput,
   type GetDiffInput,
   type GetHeadInput,
@@ -70,6 +71,35 @@ test("LocalGitAutomationClient creates a worktree using the target repository pa
   assert.deepEqual(result, {
     ok: true,
     value: validInput
+  });
+});
+
+test("LocalGitAutomationClient fetches a remote-tracking ref into the target repository", async () => {
+  const runner = new FakeGitCommandRunner();
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.fetchRemoteTrackingRef({
+    targetRepositoryPath: "C:/repos/target",
+    remoteName: "upstream",
+    branchName: "release/2026-05-18"
+  });
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "fetch",
+      "upstream",
+      "refs/heads/release/2026-05-18:refs/remotes/upstream/release/2026-05-18"
+    ]
+  ]);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetRepositoryPath: "C:/repos/target",
+      remoteName: "upstream",
+      branchName: "release/2026-05-18"
+    }
   });
 });
 
@@ -630,6 +660,53 @@ test("LocalGitAutomationClient validates createWorktree input before running git
   }
 });
 
+test("LocalGitAutomationClient validates fetchRemoteTrackingRef input before running git", async () => {
+  const cases: Array<[string, Partial<FetchRemoteTrackingRefInput>]> = [
+    ["missing targetRepositoryPath", { remoteName: "origin", branchName: "main" }],
+    [
+      "blank targetRepositoryPath",
+      { targetRepositoryPath: " ", remoteName: "origin", branchName: "main" }
+    ],
+    [
+      "missing remoteName",
+      { targetRepositoryPath: validInput.targetRepositoryPath, branchName: "main" }
+    ],
+    [
+      "blank remoteName",
+      {
+        targetRepositoryPath: validInput.targetRepositoryPath,
+        remoteName: "\t",
+        branchName: "main"
+      }
+    ],
+    [
+      "missing branchName",
+      { targetRepositoryPath: validInput.targetRepositoryPath, remoteName: "origin" }
+    ],
+    [
+      "blank branchName",
+      {
+        targetRepositoryPath: validInput.targetRepositoryPath,
+        remoteName: "origin",
+        branchName: "\n"
+      }
+    ]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.fetchRemoteTrackingRef(
+      input as FetchRemoteTrackingRefInput
+    );
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
 test("LocalGitAutomationClient validates cleanupWorktree input before running git", async () => {
   const cases: Array<[string, Partial<CleanupWorktreeInput>]> = [
     [
@@ -919,6 +996,29 @@ test("LocalGitAutomationClient returns non-zero git failures with the command re
   }
 });
 
+test("LocalGitAutomationClient returns fetch non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 128,
+    stdout: "",
+    stderr: "fatal: could not read from remote repository\n"
+  };
+  const runner = new FakeGitCommandRunner(gitResult);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.fetchRemoteTrackingRef({
+    targetRepositoryPath: validInput.targetRepositoryPath,
+    remoteName: "origin",
+    branchName: "main"
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(result.error.message, "fatal: could not read from remote repository");
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
 test("LocalGitAutomationClient returns stageFiles non-zero git failures with the command result as cause", async () => {
   const gitResult = {
     exitCode: 128,
@@ -1195,6 +1295,29 @@ test("LocalGitAutomationClient returns runner errors as git availability failure
   const client = new LocalGitAutomationClient(runner);
 
   const result = await client.createWorktree(validInput);
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unavailable");
+    assert.equal(result.error.message, "Failed to run git.");
+    assert.equal(result.error.cause, cause);
+  }
+});
+
+test("LocalGitAutomationClient returns fetch runner errors as git availability failures", async () => {
+  const cause = new Error("spawn git ENOENT");
+  const runner: GitCommandRunner = {
+    async run() {
+      throw cause;
+    }
+  };
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.fetchRemoteTrackingRef({
+    targetRepositoryPath: validInput.targetRepositoryPath,
+    remoteName: "origin",
+    branchName: "main"
+  });
 
   assert.equal(result.ok, false);
   if (!result.ok) {

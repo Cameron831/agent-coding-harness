@@ -11,6 +11,10 @@ import {
   type PrepareWorkflowResult
 } from "./prepare.js";
 import type { ImplementPromptVariant } from "../prompt-builder.js";
+import {
+  invalidPrepareBaseRefMessage,
+  parsePrepareBaseRef
+} from "./base-ref.js";
 
 export type PrepareCliOptions = PrepareWorkflowOptions;
 
@@ -139,6 +143,9 @@ export function parsePrepareCliArgs(
           );
         }
       } else if (arg === "--base-ref") {
+        if (parsePrepareBaseRef(value) === undefined) {
+          return usageFailure(`--base-ref ${invalidPrepareBaseRefMessage}`);
+        }
         baseRef = value;
       } else if (arg === "--prompt-variant") {
         if (!isPromptVariant(value)) {

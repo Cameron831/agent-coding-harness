@@ -280,6 +280,34 @@ test("prepare CLI validates issue numbers, repositories, and prompt variants", (
   );
 });
 
+test("prepare CLI rejects invalid explicit base refs", () => {
+  const cases = [
+    "main",
+    "abc123",
+    "refs/heads/main",
+    "/main",
+    "origin/",
+    "origin//main",
+    "origin/feature branch"
+  ];
+
+  for (const baseRef of cases) {
+    const result = parsePrepareCliArgs([
+      "--issue",
+      "67",
+      "--target-repo",
+      "repo",
+      "--worktree-parent",
+      "worktrees",
+      "--base-ref",
+      baseRef
+    ]);
+
+    assert.equal(result.ok, false, baseRef);
+    assert.match(!result.ok ? result.message : "", /--base-ref/);
+  }
+});
+
 test("prepare CLI rejects duplicate flags, missing values, unknown options, and positional arguments", () => {
   const duplicate = parsePrepareCliArgs([
     "--issue",
@@ -349,6 +377,35 @@ test("prepare CLI runner returns usage failure before invoking workflow", async 
   assert.match(stderr.join("\n"), /Usage:/);
 });
 
+test("prepare CLI runner rejects invalid base refs before invoking workflow", async () => {
+  let invoked = false;
+  const stderr: string[] = [];
+
+  const exitCode = await runPrepareCli(
+    [
+      "--issue",
+      "67",
+      "--target-repo",
+      "repo",
+      "--worktree-parent",
+      "worktrees",
+      "--base-ref",
+      "main"
+    ],
+    {
+      stderr: (message) => stderr.push(message),
+      runPrepareWorkflow: async () => {
+        invoked = true;
+        return successResult;
+      }
+    }
+  );
+
+  assert.equal(exitCode, 1);
+  assert.equal(invoked, false);
+  assert.match(stderr.join("\n"), /--base-ref/);
+});
+
 test("prepare CLI runner forwards parsed options and workflow dependencies", async () => {
   await withTemporaryCwd(async (directory) => {
     writeFileSync(
@@ -369,7 +426,7 @@ test("prepare CLI runner forwards parsed options and workflow dependencies", asy
         "--issue",
         "67",
         "--base-ref",
-        "main",
+        "origin/main",
         "--prompt-variant",
         "standard",
         "--prompts-dir",
@@ -394,7 +451,7 @@ test("prepare CLI runner forwards parsed options and workflow dependencies", asy
       targetRepositoryPath: "C:/repos/target",
       worktreeParentPath: "C:/repos/worktrees",
       repository: { owner: "owner", name: "name" },
-      baseRef: "main",
+      baseRef: "origin/main",
       promptVariant: "standard",
       promptsDirectory: "prompts",
       runsDirectory: ".runs"

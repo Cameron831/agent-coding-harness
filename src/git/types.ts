@@ -29,6 +29,16 @@ export interface CreateWorktreeInput extends TargetRepositoryPath {
   baseRef?: string;
 }
 
+export interface FetchRemoteTrackingRefInput extends TargetRepositoryPath {
+  remoteName: string;
+  branchName: string;
+}
+
+export interface FetchRemoteTrackingRefResult extends TargetRepositoryPath {
+  remoteName: string;
+  branchName: string;
+}
+
 export interface WorktreeDetails extends TargetRepositoryPath, TargetWorktreePath {
   branchName: string;
   baseRef?: string;
