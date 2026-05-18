@@ -22,6 +22,7 @@ import {
   type GitHubAutomationClient,
   type IssueDetails,
   type IssueIdentifier,
+  type ListOpenPullRequestsInput,
   type PrepareArtifactWriterResult,
   type PrepareIssueWorkspaceDependencies,
   type PrepareIssueWorkspaceInput,
@@ -86,6 +87,14 @@ class FakeGitHubClient implements GitHubAutomationClient {
     _input: CloseIssueInput
   ): Promise<AutomationResult<IssueDetails>> {
     throw new Error("closeIssue should not be called by prepare workflow tests.");
+  }
+
+  async listOpenPullRequests(
+    _input: ListOpenPullRequestsInput
+  ): Promise<AutomationResult<PullRequestDetails[]>> {
+    throw new Error(
+      "listOpenPullRequests should not be called by prepare workflow tests."
+    );
   }
 
   async createPullRequest(

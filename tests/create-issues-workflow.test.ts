@@ -9,6 +9,7 @@ import type {
   GitHubAutomationClient,
   IssueDetails,
   IssueIdentifier,
+  ListOpenPullRequestsInput,
   PlannerPlanIssueInput,
   PlannerPlanResult,
   PullRequestDetails
@@ -67,6 +68,12 @@ class FakeGitHubClient implements GitHubAutomationClient {
     _input: CloseIssueInput
   ): Promise<AutomationResult<IssueDetails>> {
     throw new Error("closeIssue should not be called by workflow tests.");
+  }
+
+  async listOpenPullRequests(
+    _input: ListOpenPullRequestsInput
+  ): Promise<AutomationResult<PullRequestDetails[]>> {
+    throw new Error("listOpenPullRequests should not be called by workflow tests.");
   }
 
   async createPullRequest(

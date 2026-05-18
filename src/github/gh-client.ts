@@ -13,6 +13,7 @@ import type {
   IssueDetails,
   IssueIdentifier,
   IssueState,
+  ListOpenPullRequestsInput,
   PullRequestDetails,
   PullRequestState,
   RepositorySelection
@@ -121,6 +122,47 @@ export class GhGitHubAutomationClient implements GitHubAutomationClient {
     }
 
     return this.viewIssue(input.issueNumber, input.repository);
+  }
+
+  async listOpenPullRequests(
+    input: ListOpenPullRequestsInput
+  ): Promise<AutomationResult<PullRequestDetails[]>> {
+    const validationError = validateListOpenPullRequestsInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const args = [
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--head",
+      formatPullRequestHeadFilter(input.head, input.repository),
+      "--base",
+      input.base,
+      "--json",
+      PULL_REQUEST_JSON_FIELDS
+    ];
+    appendRepositoryArgs(args, input.repository);
+
+    const result = await this.runCommand(args);
+    if (!result.ok) {
+      return result;
+    }
+
+    try {
+      return {
+        ok: true,
+        value: parsePullRequestList(result.value.stdout, input.repository)
+      };
+    } catch (cause) {
+      return failure({
+        code: "unknown",
+        message: "Failed to parse gh pull request list JSON response.",
+        cause
+      });
+    }
   }
 
   async createPullRequest(
@@ -329,6 +371,26 @@ function validateCreatePullRequestInput(
   return validateRepository(input.repository);
 }
 
+function validateListOpenPullRequestsInput(
+  input: ListOpenPullRequestsInput
+): GitHubAutomationError | undefined {
+  if (input.head.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Pull request head branch is required."
+    };
+  }
+
+  if (input.base.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Pull request base branch is required."
+    };
+  }
+
+  return validateRepository(input.repository);
+}
+
 function validateRepository(
   repository: RepositorySelection | undefined
 ): GitHubAutomationError | undefined {
@@ -378,6 +440,17 @@ function validateNonEmptyArrayValues(
   return undefined;
 }
 
+function formatPullRequestHeadFilter(
+  head: string,
+  repository: RepositorySelection | undefined
+): string {
+  if (repository && !head.includes(":")) {
+    return `${repository.owner}:${head}`;
+  }
+
+  return head;
+}
+
 function parseIssueDetails(
   stdout: string,
   repository: RepositorySelection | undefined
@@ -414,6 +487,27 @@ function parsePullRequestDetails(
   repository: RepositorySelection | undefined
 ): PullRequestDetails {
   const parsed = JSON.parse(stdout) as GhPullRequestJson;
+  return parsePullRequestDetailsFromJson(parsed, repository);
+}
+
+function parsePullRequestList(
+  stdout: string,
+  repository: RepositorySelection | undefined
+): PullRequestDetails[] {
+  const parsed = JSON.parse(stdout) as GhPullRequestJson[];
+  if (!Array.isArray(parsed)) {
+    throw new Error("Unexpected gh pull request list JSON shape.");
+  }
+
+  return parsed.map((pullRequest) =>
+    parsePullRequestDetailsFromJson(pullRequest, repository)
+  );
+}
+
+function parsePullRequestDetailsFromJson(
+  parsed: GhPullRequestJson,
+  repository: RepositorySelection | undefined
+): PullRequestDetails {
   const state = normalizePullRequestState(parsed.state);
 
   if (
