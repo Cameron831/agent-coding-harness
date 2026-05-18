@@ -25,6 +25,8 @@ import type {
   PushBranchResult,
   StageFilesInput,
   StageFilesResult,
+  ValidateWorktreeInput,
+  ValidateWorktreeResult,
   WorktreeDetails
 } from "../src/index.js";
 
@@ -70,6 +72,12 @@ class FakeGitClient implements GitAutomationClient {
   }
 
   async cleanupWorktree(): Promise<GitAutomationResult<CleanupWorktreeResult>> {
+    throw new Error("not used");
+  }
+
+  async validateWorktree(
+    _input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>> {
     throw new Error("not used");
   }
 }

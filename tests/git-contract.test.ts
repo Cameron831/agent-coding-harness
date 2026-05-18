@@ -12,6 +12,7 @@ import type {
   GitCommandRunner,
   PushBranchResult,
   StageFilesResult,
+  ValidateWorktreeResult,
   WorktreeDetails
 } from "../src/index.js";
 
@@ -76,6 +77,14 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
         targetWorktreePath: input.targetWorktreePath,
         removed: true
       });
+    },
+    async validateWorktree(input) {
+      return ok<ValidateWorktreeResult>({
+        targetRepositoryPath: input.targetRepositoryPath,
+        targetWorktreePath: input.targetWorktreePath,
+        branchName: input.expectedBranchName ?? "issue-20-git-contract",
+        head: "abc123"
+      });
     }
   };
 
@@ -113,6 +122,11 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     targetWorktreePath,
     force: true
   });
+  const validated = await fakeClient.validateWorktree({
+    targetRepositoryPath,
+    targetWorktreePath,
+    expectedBranchName: "issue-20-git-contract"
+  });
 
   assert.equal(worktree.ok && worktree.value.targetRepositoryPath, targetRepositoryPath);
   assert.equal(staged.ok && staged.value.files.length, 2);
@@ -122,6 +136,7 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
   assert.equal(commit.ok && commit.value.commitSha, "abc123");
   assert.equal(push.ok && push.value.remoteName, "origin");
   assert.equal(cleanup.ok && cleanup.value.removed, true);
+  assert.equal(validated.ok && validated.value.branchName, "issue-20-git-contract");
 });
 
 test("GitCommandRunner can be satisfied without invoking real git", async () => {

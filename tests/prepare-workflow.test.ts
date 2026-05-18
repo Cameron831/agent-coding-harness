@@ -32,6 +32,8 @@ import {
   type RenderImplementPromptInput,
   type StageFilesInput,
   type StageFilesResult,
+  type ValidateWorktreeInput,
+  type ValidateWorktreeResult,
   type UpdatePrepareRunArtifactInput as UpdateRunArtifactInput,
   type UpdatePrepareRunArtifactResult as UpdateRunArtifactResult,
   type WriteIssueArtifactInput,
@@ -99,6 +101,7 @@ class FakeGitHubClient implements GitHubAutomationClient {
 
 class FakeGitClient implements GitAutomationClient {
   readonly getHeadInputs: GetHeadInput[] = [];
+  readonly validateWorktreeInputs: ValidateWorktreeInput[] = [];
 
   constructor(
     private readonly getHeadResult: GitAutomationResult<GetHeadResult> = {
@@ -108,7 +111,16 @@ class FakeGitClient implements GitAutomationClient {
         head: "abc123before"
       }
     },
-    private readonly onGetHead?: () => void
+    private readonly onGetHead?: () => void,
+    private readonly validateWorktreeResult: GitAutomationResult<ValidateWorktreeResult> = {
+      ok: true,
+      value: {
+        targetRepositoryPath: options.targetRepositoryPath,
+        targetWorktreePath: "C:/repos/worktrees/issue-47",
+        branchName: "47-add-prepare-workflow",
+        head: "abc123before"
+      }
+    }
   ) {}
 
   async createWorktree(
@@ -153,6 +165,13 @@ class FakeGitClient implements GitAutomationClient {
     _input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("cleanupWorktree should not be called by prepare workflow tests.");
+  }
+
+  async validateWorktree(
+    input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>> {
+    this.validateWorktreeInputs.push(input);
+    return this.validateWorktreeResult;
   }
 }
 
@@ -352,6 +371,230 @@ test("prepare workflow success exposes artifact paths, branch, and worktree path
       worktreePath: "C:/repos/worktrees/issue-47",
       artifacts: artifactResult()
     }
+  });
+});
+
+test("prepare workflow returns success from complete valid run state without creating a worktree", async () => {
+  let workspacePrepared = false;
+  let runWritten = false;
+  let runUpdated = false;
+  const gitClient = new FakeGitClient();
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient,
+    loadRunState: async () => ({
+      paths: {
+        runDirectory: ".runs/issue-47",
+        promptPath: ".runs/issue-47/prompt.md",
+        issuePath: ".runs/issue-47/issue.json",
+        runPath: ".runs/issue-47/run.json"
+      },
+      run: artifactResult().run
+    }),
+    prepareWorkspace: async () => {
+      workspacePrepared = true;
+      throw new Error("prepareWorkspace should not be called.");
+    },
+    writeRunArtifact: async () => {
+      runWritten = true;
+      return runArtifactResult({ status: "preparing" });
+    },
+    writeIssueArtifact: async () => {
+      throw new Error("issue artifact should not be rewritten.");
+    },
+    writePromptArtifact: async () => {
+      throw new Error("prompt artifact should not be rewritten.");
+    },
+    updateRunArtifact: async () => {
+      runUpdated = true;
+      return runArtifactResult({ status: "prepared" });
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(gitClient.validateWorktreeInputs, [
+    {
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: "C:/repos/worktrees/issue-47",
+      expectedBranchName: "47-add-prepare-workflow"
+    }
+  ]);
+  assert.equal(workspacePrepared, false);
+  assert.equal(runWritten, false);
+  assert.equal(runUpdated, false);
+});
+
+test("prepare workflow fails malformed existing run state before fetch or writes", async () => {
+  let issueFetched = false;
+  let runWritten = false;
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient(
+      { ok: true, value: fetchedIssue },
+      () => {
+        issueFetched = true;
+      }
+    ),
+    loadRunState: async () => {
+      throw new Error(
+        "Existing prepare run artifact at .runs/issue-47/run.json must be valid JSON."
+      );
+    },
+    writeRunArtifact: async () => {
+      runWritten = true;
+      return runArtifactResult({ status: "preparing" });
+    },
+    prepareWorkspace: async () => {
+      throw new Error("workspace prep should not be called.");
+    },
+    renderPrompt: async () => {
+      throw new Error("prompt rendering should not be called.");
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.match(result.ok ? "" : result.error.message, /must be valid JSON/);
+  assert.equal(issueFetched, false);
+  assert.equal(runWritten, false);
+});
+
+test("prepare workflow reconciles partial run state with a recorded worktree", async () => {
+  const updateRunInputs: UpdateRunArtifactInput[] = [];
+  const writeIssueInputs: WriteIssueArtifactInput[] = [];
+  const writePromptInputs: WritePromptArtifactInput[] = [];
+  const gitClient = new FakeGitClient(undefined, undefined, {
+    ok: true,
+    value: {
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: "C:/repos/worktrees/issue-47",
+      branchName: "47-add-prepare-workflow",
+      head: "abc123before"
+    }
+  });
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient,
+    loadRunState: async () => ({
+      paths: {
+        runDirectory: ".runs/issue-47",
+        promptPath: ".runs/issue-47/prompt.md",
+        issuePath: ".runs/issue-47/issue.json",
+        runPath: ".runs/issue-47/run.json"
+      },
+      run: {
+        status: "preparing",
+        issueURL: fetchedIssue.url,
+        issueTitle: fetchedIssue.title,
+        issueNumber: fetchedIssue.issueNumber,
+        worktreePath: "C:/repos/worktrees/issue-47"
+      }
+    }),
+    prepareWorkspace: async () => {
+      throw new Error("prepareWorkspace should not be called.");
+    },
+    writeIssueArtifact: async (input) => {
+      writeIssueInputs.push(input);
+      return issueArtifactResult();
+    },
+    renderPrompt: async () => "rendered prompt",
+    writePromptArtifact: async (input) => {
+      writePromptInputs.push(input);
+      return promptArtifactResult();
+    },
+    updateRunArtifact: async (input) => {
+      updateRunInputs.push(input);
+      return runArtifactResult(
+        input.status === "prepared" ? artifactResult().run : { status: "preparing" }
+      );
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(gitClient.validateWorktreeInputs, [
+    {
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: "C:/repos/worktrees/issue-47"
+    }
+  ]);
+  assert.deepEqual(writeIssueInputs, [{ issue: fetchedIssue }]);
+  assert.deepEqual(writePromptInputs, [
+    {
+      issueNumber: 47,
+      prompt: "rendered prompt"
+    }
+  ]);
+  assert.deepEqual(updateRunInputs, [
+    {
+      issueNumber: 47,
+      issue: fetchedIssue
+    },
+    {
+      issueNumber: 47,
+      branchName: "47-add-prepare-workflow",
+      beforeHead: "abc123before",
+      status: "prepared"
+    }
+  ]);
+});
+
+test("prepare workflow reuses derived worktree path for partial run state without worktreePath", async () => {
+  const updateRunInputs: UpdateRunArtifactInput[] = [];
+  const gitClient = new FakeGitClient(undefined, undefined, {
+    ok: true,
+    value: {
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: "C:/repos/worktrees/issue-47",
+      branchName: "47-add-prepare-workflow",
+      head: "abc123before"
+    }
+  });
+
+  const result = await runPrepareWorkflow(options, {
+    githubClient: new FakeGitHubClient({ ok: true, value: fetchedIssue }),
+    gitClient,
+    loadRunState: async () => ({
+      paths: {
+        runDirectory: ".runs/issue-47",
+        promptPath: ".runs/issue-47/prompt.md",
+        issuePath: ".runs/issue-47/issue.json",
+        runPath: ".runs/issue-47/run.json"
+      },
+      run: {
+        status: "preparing",
+        issueNumber: fetchedIssue.issueNumber
+      }
+    }),
+    prepareWorkspace: async () => {
+      throw new Error("prepareWorkspace should not be called.");
+    },
+    writeIssueArtifact: async () => issueArtifactResult(),
+    renderPrompt: async () => "rendered prompt",
+    writePromptArtifact: async () => promptArtifactResult(),
+    updateRunArtifact: async (input) => {
+      updateRunInputs.push(input);
+      return runArtifactResult(
+        input.status === "prepared" ? artifactResult().run : { status: "preparing" }
+      );
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(gitClient.validateWorktreeInputs, [
+    {
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: "C:/repos/worktrees/issue-47",
+      expectedBranchName: "47-add-prepare-workflow"
+    }
+  ]);
+  assert.deepEqual(updateRunInputs.at(-1), {
+    issueNumber: 47,
+    worktreePath: "C:/repos/worktrees/issue-47",
+    branchName: "47-add-prepare-workflow",
+    beforeHead: "abc123before",
+    status: "prepared"
   });
 });
 

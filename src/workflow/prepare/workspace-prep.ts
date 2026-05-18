@@ -34,18 +34,17 @@ export async function prepareIssueWorkspace(
     return failure(validationError);
   }
 
-  const slug = normalizeIssueTitleSlug(input.issueTitle);
-  if (slug === "") {
+  const branchName = derivePrepareBranchName(input.issueNumber, input.issueTitle);
+  if (branchName === undefined) {
     return failure({
       code: "validation_failed",
       message: "Issue title must contain at least one alphanumeric character."
     });
   }
 
-  const branchName = `${input.issueNumber}-${slug}`;
-  const targetWorktreePath = joinWorktreePath(
+  const targetWorktreePath = derivePrepareWorktreePath(
     input.worktreeParentPath,
-    `issue-${input.issueNumber}`
+    input.issueNumber
   );
   const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
 
@@ -117,6 +116,21 @@ function validateInput(
   }
 
   return undefined;
+}
+
+export function derivePrepareBranchName(
+  issueNumber: number,
+  issueTitle: string
+): string | undefined {
+  const slug = normalizeIssueTitleSlug(issueTitle);
+  return slug === "" ? undefined : `${issueNumber}-${slug}`;
+}
+
+export function derivePrepareWorktreePath(
+  worktreeParentPath: string,
+  issueNumber: number
+): string {
+  return joinWorktreePath(worktreeParentPath, `issue-${issueNumber}`);
 }
 
 function normalizeIssueTitleSlug(issueTitle: string): string {

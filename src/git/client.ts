@@ -15,6 +15,8 @@ import type {
   PushBranchResult,
   StageFilesInput,
   StageFilesResult,
+  ValidateWorktreeInput,
+  ValidateWorktreeResult,
   WorktreeDetails
 } from "./types.js";
 
@@ -33,4 +35,7 @@ export interface GitAutomationClient {
   cleanupWorktree(
     input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>>;
+  validateWorktree(
+    input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>>;
 }

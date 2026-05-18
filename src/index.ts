@@ -74,6 +74,8 @@ export {
   runPrepareCli
 } from "./workflow/prepare/cli-prepare.js";
 export {
+  loadPrepareRunState,
+  prepareArtifactPaths,
   updateRunArtifact as updatePrepareRunArtifact,
   writeIssueArtifact,
   writePromptArtifact,
@@ -85,7 +87,11 @@ export {
   renderFeedbackPrompt,
   renderImplementPrompt
 } from "./workflow/prompt-builder.js";
-export { prepareIssueWorkspace } from "./workflow/prepare/workspace-prep.js";
+export {
+  derivePrepareBranchName,
+  derivePrepareWorktreePath,
+  prepareIssueWorkspace
+} from "./workflow/prepare/workspace-prep.js";
 export type {
   GhCommandResult,
   GhCommandRunner
@@ -208,6 +214,7 @@ export type {
   PreparePromptArtifactWriter,
   PrepareRunArtifactUpdater,
   PrepareRunArtifactWriter,
+  PrepareRunStateLoader,
   PrepareWorkflowDependencies,
   PrepareWorkflowError,
   PrepareWorkflowFailureStage,
@@ -225,7 +232,10 @@ export type {
 } from "./workflow/prepare/cli-prepare.js";
 export type {
   PrepareArtifactWriterResult,
+  PrepareArtifactPaths,
   PrepareIssueArtifact,
+  LoadPrepareRunStateInput,
+  LoadPrepareRunStateResult,
   PrepareRunArtifact,
   PrepareRunStatus,
   UpdateRunArtifactInput as UpdatePrepareRunArtifactInput,
@@ -286,5 +296,7 @@ export type {
   StageFilesResult,
   TargetRepositoryPath,
   TargetWorktreePath,
+  ValidateWorktreeInput,
+  ValidateWorktreeResult,
   WorktreeDetails
 } from "./git/types.js";

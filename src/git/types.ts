@@ -86,3 +86,16 @@ export interface CleanupWorktreeInput extends TargetRepositoryPath, TargetWorktr
 export interface CleanupWorktreeResult extends TargetRepositoryPath, TargetWorktreePath {
   removed: boolean;
 }
+
+export interface ValidateWorktreeInput
+  extends TargetRepositoryPath,
+    TargetWorktreePath {
+  expectedBranchName?: string;
+}
+
+export interface ValidateWorktreeResult
+  extends TargetRepositoryPath,
+    TargetWorktreePath {
+  branchName: string;
+  head: string;
+}

@@ -85,6 +85,35 @@ export interface PrepareArtifactWriterResult {
   run: PrepareRunArtifact;
 }
 
+export interface PrepareArtifactPaths {
+  runDirectory: string;
+  promptPath: string;
+  issuePath: string;
+  runPath: string;
+}
+
+export interface LoadPrepareRunStateInput {
+  issueNumber: number;
+  runsDirectory?: string;
+}
+
+export interface LoadPrepareRunStateResult {
+  paths: PrepareArtifactPaths;
+  run?: PrepareRunArtifact;
+}
+
+export async function loadPrepareRunState(
+  input: LoadPrepareRunStateInput
+): Promise<LoadPrepareRunStateResult> {
+  const paths = prepareArtifactPaths(input.issueNumber, input.runsDirectory);
+  const run = await loadExistingRunArtifactIfPresent(paths.runPath);
+
+  return {
+    paths,
+    ...(run !== undefined ? { run: run as PrepareRunArtifact } : {})
+  };
+}
+
 export async function writeIssueArtifact(
   input: WriteIssueArtifactInput
 ): Promise<WriteIssueArtifactResult> {
@@ -184,14 +213,7 @@ function buildRunArtifactUpdate(
   };
 }
 
-interface PrepareArtifactPaths {
-  runDirectory: string;
-  promptPath: string;
-  issuePath: string;
-  runPath: string;
-}
-
-function prepareArtifactPaths(
+export function prepareArtifactPaths(
   issueNumber: number,
   runsDirectory = ".runs"
 ): PrepareArtifactPaths {

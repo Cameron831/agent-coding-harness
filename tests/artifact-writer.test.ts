@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  loadPrepareRunState,
   updatePrepareRunArtifact as updateRunArtifact,
   writeIssueArtifact,
   writePromptArtifact,
@@ -109,6 +110,69 @@ test("writeRunArtifact creates an initial preparing run artifact", async () => {
     assert.equal(
       await readFile(path.join(root, result.runPath), "utf8"),
       '{\n  "status": "preparing"\n}\n'
+    );
+  });
+});
+
+test("loadPrepareRunState computes paths and returns an existing run without writing", async () => {
+  await withTempCwd(async (root) => {
+    const runDirectory = path.join(root, "custom-runs", "issue-42");
+    const runPath = path.join(runDirectory, "run.json");
+    await writeRunArtifact({
+      issueNumber: 42,
+      runsDirectory: "custom-runs"
+    });
+    await writeFile(
+      runPath,
+      `${JSON.stringify({ status: "prepared", issueNumber: 42 }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const result = await loadPrepareRunState({
+      issueNumber: 42,
+      runsDirectory: "custom-runs"
+    });
+
+    assert.deepEqual(result, {
+      paths: {
+        runDirectory: path.join("custom-runs", "issue-42"),
+        promptPath: path.join("custom-runs", "issue-42", "prompt.md"),
+        issuePath: path.join("custom-runs", "issue-42", "issue.json"),
+        runPath: path.join("custom-runs", "issue-42", "run.json")
+      },
+      run: {
+        status: "prepared",
+        issueNumber: 42
+      }
+    });
+    assert.equal(
+      await readFile(runPath, "utf8"),
+      '{\n  "status": "prepared",\n  "issueNumber": 42\n}\n'
+    );
+  });
+});
+
+test("loadPrepareRunState fails clearly for malformed and non-object run artifacts", async () => {
+  await withTempCwd(async (root) => {
+    const runDirectory = path.join(root, ".runs", "issue-42");
+    await writeRunArtifact({
+      issueNumber: 42
+    });
+    await writeFile(path.join(runDirectory, "run.json"), "not json", "utf8");
+
+    await assert.rejects(
+      loadPrepareRunState({
+        issueNumber: 42
+      }),
+      /Existing prepare run artifact at .*run\.json must be valid JSON\./
+    );
+
+    await writeFile(path.join(runDirectory, "run.json"), "[]", "utf8");
+    await assert.rejects(
+      loadPrepareRunState({
+        issueNumber: 42
+      }),
+      /Existing prepare run artifact at .*run\.json must be a JSON object\./
     );
   });
 });

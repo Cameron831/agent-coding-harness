@@ -36,6 +36,8 @@ import {
   type PullRequestDetails,
   type StageFilesInput,
   type StageFilesResult,
+  type ValidateWorktreeInput,
+  type ValidateWorktreeResult,
   type WorktreeDetails
 } from "../src/index.js";
 
@@ -183,6 +185,12 @@ class FakeGitClient implements GitAutomationClient {
         }
       }
     );
+  }
+
+  async validateWorktree(
+    _input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>> {
+    throw new Error("validateWorktree should not be called by release publish tests.");
   }
 }
 

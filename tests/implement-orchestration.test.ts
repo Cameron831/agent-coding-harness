@@ -26,6 +26,8 @@ import {
   type PushBranchResult,
   type StageFilesInput,
   type StageFilesResult,
+  type ValidateWorktreeInput,
+  type ValidateWorktreeResult,
   type WorktreeDetails,
   type UpdateImplementRunArtifactInput as UpdateRunArtifactInput,
   type UpdateImplementRunArtifactResult as UpdateRunArtifactResult,
@@ -104,6 +106,12 @@ class FakeGitClient implements GitAutomationClient {
     _input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("cleanupWorktree should not be called.");
+  }
+
+  async validateWorktree(
+    _input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>> {
+    throw new Error("validateWorktree should not be called.");
   }
 }
 

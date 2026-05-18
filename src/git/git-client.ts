@@ -24,6 +24,8 @@ import type {
   PushBranchResult,
   StageFilesInput,
   StageFilesResult,
+  ValidateWorktreeInput,
+  ValidateWorktreeResult,
   WorktreeDetails
 } from "./types.js";
 
@@ -326,6 +328,85 @@ export class LocalGitAutomationClient implements GitAutomationClient {
     };
   }
 
+  async validateWorktree(
+    input: ValidateWorktreeInput
+  ): Promise<GitAutomationResult<ValidateWorktreeResult>> {
+    const validationError = validateWorktreeInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const listResult = await this.runCommand([
+      "-C",
+      input.targetRepositoryPath,
+      "worktree",
+      "list",
+      "--porcelain"
+    ]);
+    if (!listResult.ok) {
+      return listResult;
+    }
+
+    const worktree = findWorktreeEntry(
+      listResult.value.stdout,
+      input.targetWorktreePath
+    );
+    if (worktree === undefined) {
+      return failure({
+        code: "validation_failed",
+        message:
+          "Target worktree path is not associated with the target repository."
+      });
+    }
+
+    if (worktree.head === undefined || worktree.head.trim() === "") {
+      return failure({
+        code: "validation_failed",
+        message: "Target worktree HEAD could not be determined."
+      });
+    }
+
+    if (worktree.branchName === undefined) {
+      return failure({
+        code: "validation_failed",
+        message: "Target worktree is detached."
+      });
+    }
+
+    if (input.expectedBranchName !== undefined) {
+      const branchResult = await this.runCommand([
+        "-C",
+        input.targetRepositoryPath,
+        "show-ref",
+        "--verify",
+        `refs/heads/${input.expectedBranchName}`
+      ]);
+      if (!branchResult.ok) {
+        return failure({
+          code: "validation_failed",
+          message: `Recorded branch does not exist: ${input.expectedBranchName}.`
+        });
+      }
+
+      if (worktree.branchName !== input.expectedBranchName) {
+        return failure({
+          code: "validation_failed",
+          message: `Target worktree is on branch ${worktree.branchName}, expected ${input.expectedBranchName}.`
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetRepositoryPath: input.targetRepositoryPath,
+        targetWorktreePath: input.targetWorktreePath,
+        branchName: worktree.branchName,
+        head: worktree.head
+      }
+    };
+  }
+
   private async runCommand(
     args: readonly string[]
   ): Promise<GitAutomationResult<GitCommandResult>> {
@@ -483,6 +564,36 @@ function validateCleanupWorktreeInput(
   return undefined;
 }
 
+function validateWorktreeInput(
+  input: ValidateWorktreeInput
+): GitAutomationError | undefined {
+  const targetRepositoryPathError = validateCleanupPath(
+    input.targetRepositoryPath,
+    "Target repository path"
+  );
+  if (targetRepositoryPathError) {
+    return targetRepositoryPathError;
+  }
+
+  const targetWorktreePathError = validateTargetWorktreePath(input);
+  if (targetWorktreePathError) {
+    return targetWorktreePathError;
+  }
+
+  if (
+    input.expectedBranchName !== undefined &&
+    (typeof input.expectedBranchName !== "string" ||
+      input.expectedBranchName.trim() === "")
+  ) {
+    return {
+      code: "validation_failed",
+      message: "Expected branch name must be non-empty when supplied."
+    };
+  }
+
+  return undefined;
+}
+
 function validateCleanupPath(
   pathValue: string,
   label: string
@@ -528,6 +639,54 @@ function isKnownWorktreePath(
         normalizePathForComparison(line.slice("worktree ".length)) ===
         expectedPath
     );
+}
+
+interface WorktreePorcelainEntry {
+  path: string;
+  head?: string;
+  branchName?: string;
+}
+
+function findWorktreeEntry(
+  worktreeListPorcelain: string,
+  targetWorktreePath: string
+): WorktreePorcelainEntry | undefined {
+  const expectedPath = normalizePathForComparison(targetWorktreePath);
+  return parseWorktreeEntries(worktreeListPorcelain).find(
+    (entry) => normalizePathForComparison(entry.path) === expectedPath
+  );
+}
+
+function parseWorktreeEntries(
+  worktreeListPorcelain: string
+): WorktreePorcelainEntry[] {
+  const entries: WorktreePorcelainEntry[] = [];
+  let current: WorktreePorcelainEntry | undefined;
+
+  for (const line of worktreeListPorcelain.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) {
+      current = { path: line.slice("worktree ".length) };
+      entries.push(current);
+      continue;
+    }
+
+    if (current === undefined) {
+      continue;
+    }
+
+    if (line.startsWith("HEAD ")) {
+      current.head = line.slice("HEAD ".length).trim();
+    } else if (line.startsWith("branch ")) {
+      current.branchName = parseBranchName(line.slice("branch ".length).trim());
+    }
+  }
+
+  return entries;
+}
+
+function parseBranchName(branchRef: string): string {
+  const prefix = "refs/heads/";
+  return branchRef.startsWith(prefix) ? branchRef.slice(prefix.length) : branchRef;
 }
 
 function normalizePathForComparison(pathValue: string): string {

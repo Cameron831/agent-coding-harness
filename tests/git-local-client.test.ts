@@ -11,7 +11,8 @@ import {
   type GitCommandResult,
   type GitCommandRunner,
   type PushBranchInput,
-  type StageFilesInput
+  type StageFilesInput,
+  type ValidateWorktreeInput
 } from "../src/index.js";
 
 const validInput: CreateWorktreeInput = {
@@ -23,6 +24,11 @@ const validWorktreePath = "C:/repos/worktrees/issue-22";
 const validCleanupInput: CleanupWorktreeInput = {
   targetRepositoryPath: "C:/repos/target",
   targetWorktreePath: "C:/repos/worktrees/issue-23"
+};
+const validValidateInput: ValidateWorktreeInput = {
+  targetRepositoryPath: "C:/repos/target",
+  targetWorktreePath: "C:/repos/worktrees/issue-23",
+  expectedBranchName: "issue-23"
 };
 
 class FakeGitCommandRunner implements GitCommandRunner {
@@ -468,6 +474,131 @@ test("LocalGitAutomationClient refuses dirty worktree cleanup without force befo
   ]);
   assert.equal(result.ok, false);
   assert.equal(result.ok || result.error.code, "validation_failed");
+});
+
+test("LocalGitAutomationClient validates an associated worktree branch and HEAD", async () => {
+  const runner = new FakeGitCommandRunner([
+    {
+      exitCode: 0,
+      stdout:
+        "worktree C:/repos/target\nHEAD abc123\nbranch refs/heads/main\n\nworktree C:/repos/worktrees/issue-23\nHEAD def456\nbranch refs/heads/issue-23\n",
+      stderr: ""
+    },
+    { exitCode: 0, stdout: "ref", stderr: "" }
+  ]);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.validateWorktree(validValidateInput);
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "worktree",
+      "list",
+      "--porcelain"
+    ],
+    [
+      "-C",
+      "C:/repos/target",
+      "show-ref",
+      "--verify",
+      "refs/heads/issue-23"
+    ]
+  ]);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetRepositoryPath: "C:/repos/target",
+      targetWorktreePath: "C:/repos/worktrees/issue-23",
+      branchName: "issue-23",
+      head: "def456"
+    }
+  });
+});
+
+test("LocalGitAutomationClient reports detached and conflicting reusable worktrees", async () => {
+  const detached = new LocalGitAutomationClient(
+    new FakeGitCommandRunner({
+      exitCode: 0,
+      stdout: "worktree C:/repos/worktrees/issue-23\nHEAD def456\ndetached\n",
+      stderr: ""
+    })
+  );
+  const detachedResult = await detached.validateWorktree(validValidateInput);
+
+  assert.equal(detachedResult.ok, false);
+  assert.equal(detachedResult.ok || detachedResult.error.code, "validation_failed");
+  assert.match(detachedResult.ok ? "" : detachedResult.error.message, /detached/);
+
+  const conflicting = new LocalGitAutomationClient(
+    new FakeGitCommandRunner([
+      {
+        exitCode: 0,
+        stdout:
+          "worktree C:/repos/worktrees/issue-23\nHEAD def456\nbranch refs/heads/other-branch\n",
+        stderr: ""
+      },
+      { exitCode: 0, stdout: "ref", stderr: "" }
+    ])
+  );
+  const conflictingResult = await conflicting.validateWorktree(validValidateInput);
+
+  assert.equal(conflictingResult.ok, false);
+  assert.equal(
+    conflictingResult.ok || conflictingResult.error.code,
+    "validation_failed"
+  );
+  assert.match(
+    conflictingResult.ok ? "" : conflictingResult.error.message,
+    /expected issue-23/
+  );
+});
+
+test("LocalGitAutomationClient refuses unassociated or missing-branch worktrees", async () => {
+  const unassociated = new LocalGitAutomationClient(
+    new FakeGitCommandRunner({
+      exitCode: 0,
+      stdout: "worktree C:/repos/target\nHEAD abc123\nbranch refs/heads/main\n",
+      stderr: ""
+    })
+  );
+  const unassociatedResult = await unassociated.validateWorktree(validValidateInput);
+
+  assert.equal(unassociatedResult.ok, false);
+  assert.equal(
+    unassociatedResult.ok || unassociatedResult.error.code,
+    "validation_failed"
+  );
+  assert.match(
+    unassociatedResult.ok ? "" : unassociatedResult.error.message,
+    /not associated/
+  );
+
+  const missingBranch = new LocalGitAutomationClient(
+    new FakeGitCommandRunner([
+      {
+        exitCode: 0,
+        stdout:
+          "worktree C:/repos/worktrees/issue-23\nHEAD def456\nbranch refs/heads/issue-23\n",
+        stderr: ""
+      },
+      { exitCode: 1, stdout: "", stderr: "missing branch" }
+    ])
+  );
+  const missingBranchResult = await missingBranch.validateWorktree(
+    validValidateInput
+  );
+
+  assert.equal(missingBranchResult.ok, false);
+  assert.equal(
+    missingBranchResult.ok || missingBranchResult.error.code,
+    "validation_failed"
+  );
+  assert.match(
+    missingBranchResult.ok ? "" : missingBranchResult.error.message,
+    /Recorded branch does not exist/
+  );
 });
 
 test("LocalGitAutomationClient validates createWorktree input before running git", async () => {
