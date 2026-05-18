@@ -3,6 +3,7 @@ import path from "node:path";
 import type { GitAutomationClient } from "../../git/client.js";
 import { LocalGitAutomationClient } from "../../git/git-client.js";
 import type {
+  CheckRemoteBranchCommitResult,
   CleanupWorktreeResult,
   CommitResult,
   GetChangedFilesResult,
@@ -28,9 +29,11 @@ import {
   type ReleaseValidationError
 } from "../../parser/release.js";
 import {
+  loadReleaseRunArtifact,
   updateRunStatus,
   writePullRequestRunArtifact,
   type PullRequestRunInput,
+  type RunPathInput,
   type UpdateRunStatusInput,
   type ReleaseRunArtifactResult
 } from "./artifact-writer.js";
@@ -48,6 +51,7 @@ export interface ReleasePublishWorkflowOptions {
 
 export type ReleasePublishWorkflowFailureStage =
   | "release_validation"
+  | "run_validation"
   | "staging"
   | "commit"
   | "push"
@@ -66,14 +70,36 @@ export interface ReleasePublishWorkflowError {
 export interface ReleasePublishWorkflowSuccess {
   releasePath: string;
   runPath: string;
-  release: ImplementorReleaseMetadata;
-  changedFiles: GetChangedFilesResult;
-  staged: StageFilesResult;
-  commit: CommitResult;
-  push: PushBranchResult;
-  pullRequest: PullRequestDetails;
+  release?: ImplementorReleaseMetadata;
+  changedFiles?: GetChangedFilesResult;
+  staged?: StageFilesResult;
+  commit?: ReleasePublishCommitResult;
+  remoteBranch?: CheckRemoteBranchCommitResult;
+  push?: ReleasePublishPushResult;
+  pullRequest: ReleasePublishPullRequestResult;
   cleanup: CleanupWorktreeResult;
   artifacts: ReleaseRunArtifactResult;
+}
+
+export interface ReleasePublishCommitResult extends CommitResult {
+  reused: boolean;
+}
+
+export interface ReleasePublishPushResult extends PushBranchResult {
+  reused: boolean;
+}
+
+export interface ReleasePublishPullRequestResult {
+  repository?: RepositorySelection;
+  pullRequestNumber?: number;
+  title?: string;
+  state?: PullRequestDetails["state"];
+  url: string;
+  head: string;
+  base: string;
+  body?: string;
+  draft?: boolean;
+  reused: boolean;
 }
 
 export type ReleasePublishWorkflowResult =
@@ -86,10 +112,18 @@ export type ReleasePublishWorkflowResult =
       error: ReleasePublishWorkflowError;
     };
 
+type ReleasePublishWorkflowFailure = Extract<
+  ReleasePublishWorkflowResult,
+  { ok: false }
+>;
+
 export interface ReleasePublishWorkflowDependencies {
   loadRelease?: (
     path: string
   ) => Promise<ReleaseJsonResult<ImplementorReleaseMetadata>>;
+  loadRunArtifact?: (
+    input: RunPathInput
+  ) => Promise<Record<string, unknown>>;
   updateRunStatus?: (
     input: UpdateRunStatusInput
   ) => Promise<ReleaseRunArtifactResult>;
@@ -106,6 +140,53 @@ export async function runReleasePublishWorkflow(
   options: ReleasePublishWorkflowOptions,
   dependencies: ReleasePublishWorkflowDependencies = {}
 ): Promise<ReleasePublishWorkflowResult> {
+  const runPath = options.runPath ?? path.join(path.dirname(options.releasePath), "run.json");
+  const loadRun = dependencies.loadRunArtifact ?? loadReleaseRunArtifact;
+  let existingRun: Record<string, unknown>;
+  try {
+    existingRun = await loadRun({ runPath });
+  } catch (cause) {
+    return failureFromThrown("run_validation", cause);
+  }
+
+  const targetWorktreePath = options.targetWorktreePath;
+  if (isPublishedRun(existingRun)) {
+    const gitClient =
+      dependencies.gitClient ??
+      dependencies.createGitClient?.() ??
+      new LocalGitAutomationClient();
+    const cleanup = await cleanupReleaseWorktree(options, gitClient);
+    if (!cleanup.ok) {
+      return cleanup;
+    }
+
+    const pullRequestURL = existingRun.pullRequestURL.trim();
+    return {
+      ok: true,
+      value: {
+        releasePath: options.releasePath,
+        runPath,
+        pullRequest: {
+          repository: options.repository,
+          url: pullRequestURL,
+          head: options.branch,
+          base: options.base,
+          reused: true
+        },
+        cleanup: cleanup.value,
+        artifacts: {
+          runPath,
+          run: existingRun
+        }
+      }
+    };
+  }
+
+  const beforeHead = validateBeforeHead(existingRun, runPath);
+  if (!beforeHead.ok) {
+    return beforeHead;
+  }
+
   const loadRelease = dependencies.loadRelease ?? loadReleaseJson;
   const releaseResult = await loadRelease(options.releasePath);
   if (!releaseResult.ok) {
@@ -120,7 +201,6 @@ export async function runReleasePublishWorkflow(
     };
   }
 
-  const runPath = options.runPath ?? path.join(path.dirname(options.releasePath), "run.json");
   const updateRunArtifactStatus = dependencies.updateRunStatus ?? updateRunStatus;
   try {
     await updateRunArtifactStatus({ runPath, status: "publishing" });
@@ -137,7 +217,6 @@ export async function runReleasePublishWorkflow(
     dependencies.createGitHubClient?.() ??
     new GhGitHubAutomationClient();
   const release = releaseResult.value;
-  const targetWorktreePath = options.targetWorktreePath;
 
   let changedFiles;
   try {
@@ -148,74 +227,82 @@ export async function runReleasePublishWorkflow(
   if (!changedFiles.ok) {
     return failureFromGitError("staging", changedFiles.error);
   }
-  if (changedFiles.value.files.length === 0) {
+
+  let head;
+  try {
+    head = await gitClient.getHead({ targetWorktreePath });
+  } catch (cause) {
+    return failureFromThrown("staging", cause);
+  }
+  if (!head.ok) {
+    return failureFromGitError("staging", head.error);
+  }
+
+  let staged: StageFilesResult | undefined;
+  let commit: ReleasePublishCommitResult;
+  if (changedFiles.value.files.length > 0) {
+    const stagedResult = await stageChangedFiles(
+      gitClient,
+      targetWorktreePath,
+      changedFiles.value.files
+    );
+    if (!stagedResult.ok) {
+      return stagedResult;
+    }
+    staged = stagedResult.value;
+
+    const commitResult = await commitRelease(
+      gitClient,
+      targetWorktreePath,
+      release.commit_message
+    );
+    if (!commitResult.ok) {
+      return commitResult;
+    }
+    commit = commitResult.value;
+  } else if (head.value.head !== beforeHead.value) {
+    commit = {
+      targetWorktreePath,
+      commitSha: head.value.head,
+      reused: true
+    };
+  } else {
     return {
       ok: false,
       error: {
         stage: "staging",
         code: "validation_failed",
-        message: "No changed files to publish."
+        message:
+          "No changed files to publish and current HEAD matches the recorded beforeHead."
       }
     };
   }
 
-  let staged;
-  try {
-    staged = await gitClient.stageFiles({
-      targetWorktreePath,
-      files: changedFiles.value.files
-    });
-  } catch (cause) {
-    return failureFromThrown("staging", cause);
-  }
-  if (!staged.ok) {
-    return failureFromGitError("staging", staged.error);
+  const pushResult = await reconcilePush(gitClient, {
+    targetWorktreePath,
+    branchName: options.branch,
+    expectedCommit: commit.commitSha
+  });
+  if (!pushResult.ok) {
+    return pushResult;
   }
 
-  let commit;
-  try {
-    commit = await gitClient.commit({
-      targetWorktreePath,
-      message: release.commit_message
-    });
-  } catch (cause) {
-    return failureFromThrown("commit", cause);
-  }
-  if (!commit.ok) {
-    return failureFromGitError("commit", commit.error);
+  const pullRequestResult = await reconcilePullRequest(
+    githubClient,
+    options,
+    release
+  );
+  if (!pullRequestResult.ok) {
+    return pullRequestResult;
   }
 
-  let push;
+  const pullRequest = pullRequestResult.value;
   try {
-    push = await gitClient.pushBranch({
-      targetWorktreePath,
-      branchName: options.branch,
-      setUpstream: true
-    });
-  } catch (cause) {
-    return failureFromThrown("push", cause);
-  }
-  if (!push.ok) {
-    return failureFromGitError("push", push.error);
-  }
-
-  const pullRequestInput = buildPullRequestInput(options, release, options.branch);
-  let pullRequest;
-  try {
-    pullRequest = await githubClient.createPullRequest(pullRequestInput);
-  } catch (cause) {
-    return failureFromThrown("pr_creation", cause);
-  }
-  if (!pullRequest.ok) {
-    return failureFromGitHubError("pr_creation", pullRequest.error);
-  }
-
-  const writePullRequestRun =
-    dependencies.writePullRequestRunArtifact ?? writePullRequestRunArtifact;
-  try {
+    const writePullRequestRun =
+      dependencies.writePullRequestRunArtifact ?? writePullRequestRunArtifact;
     await writePullRequestRun({
       runPath,
-      pullRequestURL: pullRequest.value.url
+      pullRequestURL: pullRequest.url
     });
   } catch (cause) {
     return failureFromThrown("artifact_write", cause);
@@ -228,17 +315,9 @@ export async function runReleasePublishWorkflow(
     return failureFromThrown("artifact_write", cause);
   }
 
-  let cleanup;
-  try {
-    cleanup = await gitClient.cleanupWorktree({
-      targetRepositoryPath: options.targetRepositoryPath,
-      targetWorktreePath
-    });
-  } catch (cause) {
-    return failureFromThrown("cleanup", cause);
-  }
+  const cleanup = await cleanupReleaseWorktree(options, gitClient);
   if (!cleanup.ok) {
-    return failureFromGitError("cleanup", cleanup.error);
+    return cleanup;
   }
 
   return {
@@ -248,10 +327,11 @@ export async function runReleasePublishWorkflow(
       runPath,
       release,
       changedFiles: changedFiles.value,
-      staged: staged.value,
-      commit: commit.value,
-      push: push.value,
-      pullRequest: pullRequest.value,
+      ...(staged !== undefined ? { staged } : {}),
+      commit,
+      remoteBranch: pushResult.value.remoteBranch,
+      push: pushResult.value.push,
+      pullRequest,
       cleanup: cleanup.value,
       artifacts
     }
@@ -278,10 +358,247 @@ function buildPullRequestInput(
   };
 }
 
+async function stageChangedFiles(
+  gitClient: GitAutomationClient,
+  targetWorktreePath: string,
+  files: string[]
+): Promise<
+  | { ok: true; value: StageFilesResult }
+  | { ok: false; error: ReleasePublishWorkflowError }
+> {
+  let staged;
+  try {
+    staged = await gitClient.stageFiles({ targetWorktreePath, files });
+  } catch (cause) {
+    return failureFromThrown("staging", cause);
+  }
+  if (!staged.ok) {
+    return failureFromGitError("staging", staged.error);
+  }
+
+  return staged;
+}
+
+async function commitRelease(
+  gitClient: GitAutomationClient,
+  targetWorktreePath: string,
+  message: string
+): Promise<
+  | { ok: true; value: ReleasePublishCommitResult }
+  | { ok: false; error: ReleasePublishWorkflowError }
+> {
+  let commit;
+  try {
+    commit = await gitClient.commit({ targetWorktreePath, message });
+  } catch (cause) {
+    return failureFromThrown("commit", cause);
+  }
+  if (!commit.ok) {
+    return failureFromGitError("commit", commit.error);
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...commit.value,
+      reused: false
+    }
+  };
+}
+
+async function reconcilePush(
+  gitClient: GitAutomationClient,
+  input: {
+    targetWorktreePath: string;
+    branchName: string;
+    expectedCommit: string;
+  }
+): Promise<
+  | {
+      ok: true;
+      value: {
+        remoteBranch: CheckRemoteBranchCommitResult;
+        push: ReleasePublishPushResult;
+      };
+    }
+  | { ok: false; error: ReleasePublishWorkflowError }
+> {
+  let remoteBranch;
+  try {
+    remoteBranch = await gitClient.checkRemoteBranchCommit(input);
+  } catch (cause) {
+    return failureFromThrown("push", cause);
+  }
+  if (!remoteBranch.ok) {
+    return failureFromGitError("push", remoteBranch.error);
+  }
+
+  if (remoteBranch.value.status === "matches") {
+    return {
+      ok: true,
+      value: {
+        remoteBranch: remoteBranch.value,
+        push: {
+          targetWorktreePath: input.targetWorktreePath,
+          branchName: remoteBranch.value.branchName,
+          remoteName: remoteBranch.value.remoteName,
+          reused: true
+        }
+      }
+    };
+  }
+
+  let push;
+  try {
+    push = await gitClient.pushBranch({
+      targetWorktreePath: input.targetWorktreePath,
+      branchName: input.branchName,
+      setUpstream: true
+    });
+  } catch (cause) {
+    return failureFromThrown("push", cause);
+  }
+  if (!push.ok) {
+    return failureFromGitError("push", push.error);
+  }
+
+  return {
+    ok: true,
+    value: {
+      remoteBranch: remoteBranch.value,
+      push: {
+        ...push.value,
+        reused: false
+      }
+    }
+  };
+}
+
+async function reconcilePullRequest(
+  githubClient: GitHubAutomationClient,
+  options: ReleasePublishWorkflowOptions,
+  release: ImplementorReleaseMetadata
+): Promise<
+  | { ok: true; value: ReleasePublishPullRequestResult }
+  | { ok: false; error: ReleasePublishWorkflowError }
+> {
+  let pullRequests;
+  try {
+    pullRequests = await githubClient.listOpenPullRequests({
+      repository: options.repository,
+      head: options.branch,
+      base: options.base
+    });
+  } catch (cause) {
+    return failureFromThrown("pr_creation", cause);
+  }
+  if (!pullRequests.ok) {
+    return failureFromGitHubError("pr_creation", pullRequests.error);
+  }
+
+  if (pullRequests.value.length > 1) {
+    return {
+      ok: false,
+      error: {
+        stage: "pr_creation",
+        code: "validation_failed",
+        message: `Multiple open pull requests match ${options.branch} into ${options.base}; cannot reconcile release publication.`
+      }
+    };
+  }
+
+  if (pullRequests.value.length === 1) {
+    return {
+      ok: true,
+      value: {
+        ...pullRequests.value[0],
+        reused: true
+      }
+    };
+  }
+
+  const pullRequestInput = buildPullRequestInput(options, release, options.branch);
+  let pullRequest;
+  try {
+    pullRequest = await githubClient.createPullRequest(pullRequestInput);
+  } catch (cause) {
+    return failureFromThrown("pr_creation", cause);
+  }
+  if (!pullRequest.ok) {
+    return failureFromGitHubError("pr_creation", pullRequest.error);
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...pullRequest.value,
+      reused: false
+    }
+  };
+}
+
+async function cleanupReleaseWorktree(
+  options: ReleasePublishWorkflowOptions,
+  gitClient: GitAutomationClient
+): Promise<
+  | { ok: true; value: CleanupWorktreeResult }
+  | { ok: false; error: ReleasePublishWorkflowError }
+> {
+  let cleanup;
+  try {
+    cleanup = await gitClient.cleanupWorktree({
+      targetRepositoryPath: options.targetRepositoryPath,
+      targetWorktreePath: options.targetWorktreePath
+    });
+  } catch (cause) {
+    return failureFromThrown("cleanup", cause);
+  }
+  if (!cleanup.ok) {
+    return failureFromGitError("cleanup", cleanup.error);
+  }
+
+  return cleanup;
+}
+
+function isPublishedRun(run: Record<string, unknown>): run is Record<
+  string,
+  unknown
+> & {
+  status: "published";
+  pullRequestURL: string;
+} {
+  return run.status === "published" && isNonEmptyString(run.pullRequestURL);
+}
+
+function validateBeforeHead(
+  run: Record<string, unknown>,
+  runPath: string
+): { ok: true; value: string } | { ok: false; error: ReleasePublishWorkflowError } {
+  if (!isNonEmptyString(run.beforeHead)) {
+    return {
+      ok: false,
+      error: {
+        stage: "run_validation",
+        code: "validation_failed",
+        message: `Release run artifact at ${runPath} must include non-empty beforeHead before publishing.`
+      }
+    };
+  }
+
+  return {
+    ok: true,
+    value: run.beforeHead
+  };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
 function failureFromGitError(
   stage: ReleasePublishWorkflowFailureStage,
   error: GitAutomationError
-): ReleasePublishWorkflowResult {
+): ReleasePublishWorkflowFailure {
   return {
     ok: false,
     error: {
@@ -296,7 +613,7 @@ function failureFromGitError(
 function failureFromGitHubError(
   stage: ReleasePublishWorkflowFailureStage,
   error: GitHubAutomationError
-): ReleasePublishWorkflowResult {
+): ReleasePublishWorkflowFailure {
   return {
     ok: false,
     error: {
@@ -311,7 +628,7 @@ function failureFromGitHubError(
 function failureFromThrown(
   stage: ReleasePublishWorkflowFailureStage,
   cause: unknown
-): ReleasePublishWorkflowResult {
+): ReleasePublishWorkflowFailure {
   return {
     ok: false,
     error: {

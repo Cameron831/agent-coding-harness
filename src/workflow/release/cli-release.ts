@@ -155,17 +155,40 @@ export async function runReleaseCli(
 export function formatReleaseSuccess(
   value: Extract<ReleasePublishWorkflowResult, { ok: true }>["value"]
 ): string {
-  return [
+  const lines = [
     "Published release.",
     `Release: ${value.releasePath}`,
     `Run artifact: ${value.runPath}`,
-    `Branch: ${value.push.branchName}`,
-    `Worktree: ${value.commit.targetWorktreePath}`,
-    `Commit: ${value.commit.commitSha}`,
-    `Pushed: ${value.push.remoteName}/${value.push.branchName}`,
-    `Pull request: #${value.pullRequest.pullRequestNumber} ${value.pullRequest.url}`,
+    `Branch: ${value.push?.branchName ?? value.pullRequest.head}`,
+    `Worktree: ${value.commit?.targetWorktreePath ?? value.cleanup.targetWorktreePath}`
+  ];
+
+  if (value.commit !== undefined) {
+    lines.push(
+      `Commit: ${value.commit.commitSha}${value.commit.reused ? " (reused)" : ""}`
+    );
+  }
+
+  if (value.push !== undefined) {
+    lines.push(
+      value.push.reused
+        ? `Pushed: ${value.push.remoteName}/${value.push.branchName} (already up to date)`
+        : `Pushed: ${value.push.remoteName}/${value.push.branchName}`
+    );
+  }
+
+  const pullRequestNumber =
+    value.pullRequest.pullRequestNumber !== undefined
+      ? `#${value.pullRequest.pullRequestNumber} `
+      : "";
+  lines.push(
+    `Pull request: ${pullRequestNumber}${value.pullRequest.url}${
+      value.pullRequest.reused ? " (reused)" : ""
+    }`,
     `Cleanup: ${value.cleanup.removed ? "removed" : "not removed"}`
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function formatReleaseFailure(
