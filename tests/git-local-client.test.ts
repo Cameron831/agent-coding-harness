@@ -852,7 +852,7 @@ test("LocalGitAutomationClient validates deleteLocalBranch input before running 
   }
 });
 
-test("LocalGitAutomationClient refuses cleanup for a worktree not associated with the target repository", async () => {
+test("LocalGitAutomationClient treats already absent cleanup as a no-op", async () => {
   const runner = new FakeGitCommandRunner({
     exitCode: 0,
     stdout: "worktree C:/repos/worktrees/other\nHEAD abc123\n",
@@ -871,8 +871,13 @@ test("LocalGitAutomationClient refuses cleanup for a worktree not associated wit
       "--porcelain"
     ]
   ]);
-  assert.equal(result.ok, false);
-  assert.equal(result.ok || result.error.code, "validation_failed");
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      ...validCleanupInput,
+      removed: false
+    }
+  });
 });
 
 test("LocalGitAutomationClient validates stageFiles input before running git", async () => {
