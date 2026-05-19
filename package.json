@@ -14,8 +14,7 @@
     "workflow:implement": "node dist/src/cli.js implement",
     "workflow:release": "node dist/src/cli.js release",
     "workflow:cleanup": "node dist/src/cli.js cleanup",
-    "plan:issues": "node dist/src/cli.js",
-    "release:pr": "node dist/src/cli.js"
+    "plan:issues": "node dist/src/cli.js"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",

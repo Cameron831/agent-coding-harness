@@ -91,7 +91,7 @@ Publish the staged release workflow:
 npm run workflow -- release --release .runs/issue-<issue-number>/release.json --target-repo <target-repo-path> --worktree <worktree-path> --branch <branch-name> --base main --repo owner/name
 ```
 
-The top-level `prepare`, `implement`, and `release` subcommands delegate to the workflow-local CLIs. Use those workflow-local usage messages as the source of truth for stage-specific options. The `release` subcommand is the publish workflow; root `--release` remains the legacy manual PR mode described below.
+The top-level `prepare`, `implement`, and `release` subcommands delegate to the workflow-local CLIs. Use those workflow-local usage messages as the source of truth for stage-specific options. The `release` subcommand is the publish workflow.
 
 ## Handoff files
 - Feature spec
@@ -121,28 +121,6 @@ Live creation uses the local GitHub CLI authentication through the repository au
 The command validates the full plan before creating the first issue. Creation is sequential in plan order and stops on the first failure. If a later issue fails, the output lists any issues already created so they can be reconciled manually.
 
 Re-running live creation can create duplicate GitHub issues. Use `--dry-run` first and only run live mode once for a given approved plan unless duplicates are intended.
-
-## Release pull request creation legacy root mode
-Build the project, then preview the manual pull request that would be created from an implementor `release.json` artifact:
-
-```powershell
-npm run build
-npm run workflow -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name --dry-run
-```
-
-To create the pull request in GitHub, omit `--dry-run`:
-
-```powershell
-npm run workflow -- --release .artifacts/implementor/issue-<issue-number>/release.json --repo owner/name
-```
-
-The existing `npm run release:pr -- --release ...` script remains available for compatibility. This legacy manual PR mode is separate from `npm run workflow -- release`, which runs the staged release publish workflow.
-
-The command validates release metadata with the implementor release parser and renders the pull request title and body from that artifact. If `--base` is omitted, the base branch defaults to `main`. If `--head` is omitted, the command resolves the current git branch; provide `--head <branch>` explicitly when running from a detached HEAD or another context where git cannot report the current branch. If `--repo` is omitted, the GitHub CLI repository context is used.
-
-Live creation uses local GitHub CLI authentication through the repository automation client. Before running it, install `gh`, authenticate with `gh auth login`, and make sure the authenticated account can create pull requests in the target repository.
-
-Re-running live creation can create duplicate GitHub pull requests. Use `--dry-run` first and only run live mode once for a given release artifact unless duplicates are intended.
 
 ## Target repository workflow
 This repository coordinates agent workflow artifacts and release JSON. Code mutations happen in the target repository selected for the issue, usually from a separate git worktree.

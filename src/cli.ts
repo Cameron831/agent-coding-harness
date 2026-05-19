@@ -6,23 +6,9 @@ import {
   type PlannerPlanIssueInput,
   type PlannerPlanResult
 } from "./parser/plan.js";
-import {
-  loadReleaseJson,
-  type ImplementorReleaseMetadata,
-  type ReleaseJsonResult
-} from "./parser/release.js";
 import type { GitHubAutomationClient } from "./github/client.js";
 import type { RepositorySelection } from "./github/types.js";
-import {
-  LocalGitCommandRunner,
-  type GitCommandRunner
-} from "./git/git-runner.js";
 import { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
-import {
-  runReleasePullRequestWorkflow,
-  type BranchResolutionResult,
-  type ReleasePullRequestWorkflowOptions
-} from "./workflow/create-pull-request.js";
 import { runCleanupCli as runCleanupWorkflowLocalCli } from "./workflow/cleanup/cli-cleanup.js";
 import { runImplementCli as runImplementWorkflowLocalCli } from "./workflow/implement/cli-implement.js";
 import { runPrepareCli as runPrepareWorkflowLocalCli } from "./workflow/prepare/cli-prepare.js";
@@ -34,9 +20,7 @@ export interface PlannerIssueCliOptions {
   dryRun: boolean;
 }
 
-export type ReleasePullRequestCliOptions = ReleasePullRequestWorkflowOptions;
-
-export type CliOptions = PlannerIssueCliOptions | ReleasePullRequestCliOptions;
+export type CliOptions = PlannerIssueCliOptions;
 
 export type WorkflowLocalCliRunner = (
   args: readonly string[],
@@ -62,11 +46,6 @@ export interface RunCliOptions {
   loadPlan?: (
     path: string
   ) => Promise<PlannerPlanResult<PlannerPlanIssueInput[]>>;
-  loadRelease?: (
-    path: string
-  ) => Promise<ReleaseJsonResult<ImplementorReleaseMetadata>>;
-  resolveCurrentBranch?: () => Promise<BranchResolutionResult>;
-  gitRunner?: GitCommandRunner;
   githubClient?: GitHubAutomationClient;
   createGitHubClient?: () => GitHubAutomationClient;
   runPrepareCli?: WorkflowLocalCliRunner;
@@ -83,9 +62,7 @@ export function formatUsage(): string {
     "  agent-workforce release [release publish options]",
     "  agent-workforce cleanup [cleanup options]",
     "  agent-workforce --plan <path> [--repo owner/name] [--dry-run]",
-    "  agent-workforce --release <path> [--repo owner/name] [--base branch] [--head branch] [--dry-run]",
     "  agent-workforce-plan-issues --plan <path> [--repo owner/name] [--dry-run]",
-    "  agent-workforce-release-pr --release <path> [--repo owner/name] [--base branch] [--head branch] [--dry-run]",
     "",
     "Commands:",
     "  prepare            Run the staged prepare workflow.",
@@ -95,10 +72,7 @@ export function formatUsage(): string {
     "",
     "Legacy root modes:",
     "  --plan <path>       Create issues from a planner plan.json artifact.",
-    "  --release <path>    Create a manual PR from release.json; distinct from the release publish subcommand.",
     "  --repo owner/name   Optional GitHub repository context.",
-    "  --base branch       Manual PR base branch. Defaults to main.",
-    "  --head branch       Manual PR head branch. Defaults to the current branch.",
     "  --dry-run           Print a preview without creating GitHub resources."
   ].join("\n");
 }
@@ -124,12 +98,8 @@ export function parseRepository(value: string): RepositorySelection {
 
 export function parseCliArgs(args: readonly string[]): CliParseResult {
   let planPath: string | undefined;
-  let releasePath: string | undefined;
   let repository: RepositorySelection | undefined;
-  let base: string | undefined;
-  let head: string | undefined;
   let dryRun = false;
-  let releaseSpecificOptionUsed = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -139,13 +109,7 @@ export function parseCliArgs(args: readonly string[]): CliParseResult {
       continue;
     }
 
-    if (
-      arg === "--plan" ||
-      arg === "--release" ||
-      arg === "--repo" ||
-      arg === "--base" ||
-      arg === "--head"
-    ) {
+    if (arg === "--plan" || arg === "--repo") {
       const value = args[index + 1];
       if (value === undefined || value.startsWith("--")) {
         return usageFailure(`${arg} requires a value.`);
@@ -156,13 +120,7 @@ export function parseCliArgs(args: readonly string[]): CliParseResult {
           return usageFailure("--plan may only be provided once.");
         }
         planPath = value;
-      } else if (arg === "--release") {
-        if (releasePath !== undefined) {
-          return usageFailure("--release may only be provided once.");
-        }
-        releasePath = value;
-        releaseSpecificOptionUsed = true;
-      } else if (arg === "--repo") {
+      } else {
         if (repository !== undefined) {
           return usageFailure("--repo may only be provided once.");
         }
@@ -176,18 +134,6 @@ export function parseCliArgs(args: readonly string[]): CliParseResult {
               : "Repository must use exact owner/name format."
           );
         }
-      } else if (arg === "--base") {
-        if (base !== undefined) {
-          return usageFailure("--base may only be provided once.");
-        }
-        base = value;
-        releaseSpecificOptionUsed = true;
-      } else {
-        if (head !== undefined) {
-          return usageFailure("--head may only be provided once.");
-        }
-        head = value;
-        releaseSpecificOptionUsed = true;
       }
 
       index += 1;
@@ -201,19 +147,7 @@ export function parseCliArgs(args: readonly string[]): CliParseResult {
     return usageFailure(`Unexpected positional argument: ${arg}.`);
   }
 
-  if (planPath !== undefined && releasePath !== undefined) {
-    return usageFailure("--plan and --release cannot be used together.");
-  }
-
   if (planPath !== undefined) {
-    if (base !== undefined) {
-      return usageFailure("--base requires --release.");
-    }
-
-    if (head !== undefined) {
-      return usageFailure("--head requires --release.");
-    }
-
     return {
       ok: true,
       value: {
@@ -222,23 +156,6 @@ export function parseCliArgs(args: readonly string[]): CliParseResult {
         dryRun
       }
     };
-  }
-
-  if (releasePath !== undefined) {
-    return {
-      ok: true,
-      value: {
-        releasePath,
-        repository,
-        base: base ?? "main",
-        ...(head !== undefined ? { head } : {}),
-        dryRun
-      }
-    };
-  }
-
-  if (releaseSpecificOptionUsed) {
-    return usageFailure("--release is required.");
   }
 
   return usageFailure("--plan is required.");
@@ -251,7 +168,6 @@ export async function runCli(
   const stdout = options.stdout ?? console.log;
   const stderr = options.stderr ?? console.error;
   const loadPlan = options.loadPlan ?? loadPlannerPlan;
-  const loadRelease = options.loadRelease ?? loadReleaseJson;
 
   const [command, ...commandArgs] = args;
   if (command === "prepare") {
@@ -289,19 +205,6 @@ export async function runCli(
     return 1;
   }
 
-  if ("releasePath" in parsed.value) {
-    return runReleasePullRequestWorkflow(parsed.value, {
-      stdout,
-      stderr,
-      loadRelease,
-      resolveCurrentBranch:
-        options.resolveCurrentBranch ??
-        (() => resolveCurrentBranch(options.gitRunner ?? new LocalGitCommandRunner())),
-      githubClient: options.githubClient,
-      createGitHubClient: options.createGitHubClient
-    });
-  }
-
   return runPlannerIssueWorkflow(parsed.value, {
     stdout,
     stderr,
@@ -309,37 +212,6 @@ export async function runCli(
     githubClient: options.githubClient,
     createGitHubClient: options.createGitHubClient
   });
-}
-
-async function resolveCurrentBranch(
-  runner: GitCommandRunner
-): Promise<BranchResolutionResult> {
-  let result;
-  try {
-    result = await runner.run(["branch", "--show-current"]);
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-
-  if (result.exitCode !== 0) {
-    return {
-      ok: false,
-      message: result.stderr.trim() || `git exited with code ${result.exitCode}.`
-    };
-  }
-
-  const branchName = result.stdout.trim();
-  if (branchName === "") {
-    return {
-      ok: false,
-      message: "git did not report a current branch."
-    };
-  }
-
-  return { ok: true, branchName };
 }
 
 function usageFailure(message: string): CliParseResult {
