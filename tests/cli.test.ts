@@ -10,7 +10,6 @@ import type {
   CreateIssueInput,
   CreatePullRequestInput,
   GitHubAutomationClient,
-  ImplementorReleaseMetadata,
   IssueDetails,
   IssueIdentifier,
   ListOpenPullRequestsInput,
@@ -39,16 +38,6 @@ const secondValidIssue: PlannerPlanIssueInput = {
     "Creation stops on the first failure."
   ],
   notes: ["Do not construct gh commands in the CLI."]
-};
-
-const validRelease: ImplementorReleaseMetadata = {
-  commit_message: "Add manual PR CLI",
-  pull_request: {
-    title: "Add manual pull request CLI",
-    summary: "Creates pull requests from implementor release metadata.",
-    scope: ["Parse release CLI arguments.", "Create pull requests."],
-    verification: ["npm test"]
-  }
 };
 
 class FakeGitHubClient implements GitHubAutomationClient {
@@ -110,8 +99,6 @@ class FakeGitHubClient implements GitHubAutomationClient {
     );
   }
 }
-
-type ManualPrRunCliOptions = NonNullable<Parameters<typeof runCli>[1]>;
 
 test("routes prepare subcommand to injected runner with forwarded argv", async () => {
   let capturedArgs: readonly string[] | undefined;
@@ -226,7 +213,12 @@ test("top-level usage lists staged commands without workflow-local options", () 
   assert.match(usage, /agent-workforce implement \[implement options\]/);
   assert.match(usage, /agent-workforce release \[release publish options\]/);
   assert.match(usage, /agent-workforce cleanup \[cleanup options\]/);
-  assert.match(usage, /manual PR from release\.json/);
+  assert.match(usage, /agent-workforce --plan <path>/);
+  assert.doesNotMatch(usage, /agent-workforce --release/);
+  assert.doesNotMatch(usage, /agent-workforce-release-pr/);
+  assert.doesNotMatch(usage, /--base/);
+  assert.doesNotMatch(usage, /--head/);
+  assert.doesNotMatch(usage, /manual PR/);
   assert.doesNotMatch(usage, /--target-repo/);
   assert.doesNotMatch(usage, /--worktree-parent/);
 });
@@ -245,16 +237,19 @@ test("package scripts expose top-level staged workflow commands", async () => {
   assert.equal(packageJson.scripts["workflow:release"], "node dist/src/cli.js release");
   assert.equal(packageJson.scripts["workflow:cleanup"], "node dist/src/cli.js cleanup");
   assert.equal(packageJson.scripts["plan:issues"], "node dist/src/cli.js");
-  assert.equal(packageJson.scripts["release:pr"], "node dist/src/cli.js");
+  assert.equal(packageJson.scripts["release:pr"], undefined);
 });
 
-test("README documents top-level staged commands and qualifies legacy release mode", async () => {
+test("README documents top-level staged commands and planner issue creation", async () => {
   const readme = await readFile("README.md", "utf8");
 
   assert.match(readme, /npm run workflow -- prepare /);
   assert.match(readme, /npm run workflow -- implement /);
   assert.match(readme, /npm run workflow -- release /);
-  assert.match(readme, /legacy manual PR mode/);
+  assert.match(readme, /npm run workflow -- --plan /);
+  assert.match(readme, /npm run plan:issues -- --plan /);
+  assert.doesNotMatch(readme, /legacy manual PR mode/);
+  assert.doesNotMatch(readme, /npm run workflow -- --release /);
 });
 
 function successfulIssue(
@@ -291,29 +286,6 @@ test("parses --plan, --repo, and --dry-run", () => {
   });
 });
 
-test("parses --release with optional repository, base, head, and dry-run", () => {
-  const result = parseCliArgs([
-    "--release",
-    "release.json",
-    "--repo",
-    "owner/name",
-    "--base",
-    "develop",
-    "--head",
-    "feature/manual-pr-cli",
-    "--dry-run"
-  ]);
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.ok && result.value, {
-    releasePath: "release.json",
-    repository: { owner: "owner", name: "name" },
-    base: "develop",
-    head: "feature/manual-pr-cli",
-    dryRun: true
-  });
-});
-
 test("requires --plan", () => {
   const result = parseCliArgs(["--dry-run"]);
 
@@ -321,16 +293,24 @@ test("requires --plan", () => {
   assert.match(!result.ok ? result.message : "", /--plan is required/);
 });
 
-test("rejects conflicting --plan and --release modes", () => {
+test("rejects unsupported --release mode", () => {
   const result = parseCliArgs([
-    "--plan",
-    "plan.json",
     "--release",
     "release.json"
   ]);
 
   assert.equal(result.ok, false);
-  assert.match(!result.ok ? result.message : "", /--plan and --release/);
+  assert.match(!result.ok ? result.message : "", /Unknown option: --release/);
+});
+
+test("rejects unsupported manual pull request branch flags", () => {
+  const base = parseCliArgs(["--plan", "plan.json", "--base", "main"]);
+  const head = parseCliArgs(["--plan", "plan.json", "--head", "feature/a"]);
+
+  assert.equal(base.ok, false);
+  assert.match(!base.ok ? base.message : "", /Unknown option: --base/);
+  assert.equal(head.ok, false);
+  assert.match(!head.ok ? head.message : "", /Unknown option: --head/);
 });
 
 test("rejects unknown flags", () => {
@@ -372,39 +352,6 @@ test("rejects duplicate --plan and --repo values", () => {
   assert.match(!duplicatePlan.ok ? duplicatePlan.message : "", /--plan may only/);
   assert.equal(duplicateRepo.ok, false);
   assert.match(!duplicateRepo.ok ? duplicateRepo.message : "", /--repo may only/);
-});
-
-test("rejects duplicate release pull request option values", () => {
-  const duplicateRelease = parseCliArgs([
-    "--release",
-    "a.json",
-    "--release",
-    "b.json",
-    "--dry-run"
-  ]);
-  const duplicateBase = parseCliArgs([
-    "--release",
-    "release.json",
-    "--base",
-    "main",
-    "--base",
-    "develop"
-  ]);
-  const duplicateHead = parseCliArgs([
-    "--release",
-    "release.json",
-    "--head",
-    "feature/a",
-    "--head",
-    "feature/b"
-  ]);
-
-  assert.equal(duplicateRelease.ok, false);
-  assert.match(!duplicateRelease.ok ? duplicateRelease.message : "", /--release may only/);
-  assert.equal(duplicateBase.ok, false);
-  assert.match(!duplicateBase.ok ? duplicateBase.message : "", /--base may only/);
-  assert.equal(duplicateHead.ok, false);
-  assert.match(!duplicateHead.ok ? duplicateHead.message : "", /--head may only/);
 });
 
 test("rejects positional arguments", () => {
@@ -625,73 +572,5 @@ test("invalid --repo fails before loading the plan", async () => {
   assert.equal(exitCode, 1);
   assert.equal(loadInvoked, false);
   assert.match(stderr.join("\n"), /Repository must use exact owner\/name format/);
-});
-
-test("release mode wires the default git branch resolver when head is omitted", async () => {
-  const stdout: string[] = [];
-  const gitArgs: string[][] = [];
-  const options: ManualPrRunCliOptions = {
-    loadRelease: async () => ({ ok: true, value: validRelease }),
-    stdout: (message) => stdout.push(message),
-    gitRunner: {
-      async run(args) {
-        gitArgs.push([...args]);
-        return {
-          exitCode: 0,
-          stdout: "feature/from-git\n",
-          stderr: ""
-        };
-      }
-    },
-    createGitHubClient: () => {
-      throw new Error("GitHub client should not be created during PR dry-run.");
-    }
-  };
-
-  const exitCode = await runCli(
-    ["--release", "release.json", "--dry-run"],
-    options
-  );
-
-  assert.equal(exitCode, 0);
-  assert.deepEqual(gitArgs, [["branch", "--show-current"]]);
-  assert.match(stdout.join("\n"), /Base: main/);
-  assert.match(stdout.join("\n"), /Head: feature\/from-git/);
-});
-
-test("release mode routes explicit head without default git branch resolution", async () => {
-  const stdout: string[] = [];
-  const options: ManualPrRunCliOptions = {
-    loadRelease: async () => ({ ok: true, value: validRelease }),
-    gitRunner: {
-      async run() {
-        throw new Error("git should not be used when --head is set.");
-      }
-    },
-    createGitHubClient: () => {
-      throw new Error("GitHub client should not be created during PR dry-run.");
-    },
-    stdout: (message) => stdout.push(message)
-  };
-
-  const exitCode = await runCli(
-    [
-      "--release",
-      "release.json",
-      "--repo",
-      "owner/name",
-      "--base",
-      "develop",
-      "--head",
-      "feature/explicit-head",
-      "--dry-run"
-    ],
-    options
-  );
-
-  assert.equal(exitCode, 0);
-  assert.match(stdout.join("\n"), /Repository: owner\/name/);
-  assert.match(stdout.join("\n"), /Base: develop/);
-  assert.match(stdout.join("\n"), /Head: feature\/explicit-head/);
 });
 

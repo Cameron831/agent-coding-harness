@@ -18,7 +18,6 @@ export {
   validateReleaseMetadata
 } from "./parser/release.js";
 export { runPlannerIssueWorkflow } from "./workflow/create-issues.js";
-export { runReleasePullRequestWorkflow } from "./workflow/create-pull-request.js";
 export {
   getImplementArtifactPaths,
   updateRunArtifact as updateImplementRunArtifact,
@@ -121,11 +120,6 @@ export type {
   PlannerIssueWorkflowDependencies,
   PlannerIssueWorkflowOptions
 } from "./workflow/create-issues.js";
-export type {
-  BranchResolutionResult,
-  ReleasePullRequestWorkflowDependencies,
-  ReleasePullRequestWorkflowOptions
-} from "./workflow/create-pull-request.js";
 export type {
   ImplementArtifactPathInput,
   ImplementArtifactPaths,
