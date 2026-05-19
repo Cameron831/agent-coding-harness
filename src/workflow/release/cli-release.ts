@@ -155,13 +155,21 @@ export async function runReleaseCli(
 export function formatReleaseSuccess(
   value: Extract<ReleasePublishWorkflowResult, { ok: true }>["value"]
 ): string {
+  const worktreePath =
+    value.commit?.targetWorktreePath ??
+    value.push?.targetWorktreePath ??
+    value.remoteBranch?.targetWorktreePath ??
+    value.changedFiles?.targetWorktreePath;
   const lines = [
     "Published release.",
     `Release: ${value.releasePath}`,
     `Run artifact: ${value.runPath}`,
-    `Branch: ${value.push?.branchName ?? value.pullRequest.head}`,
-    `Worktree: ${value.commit?.targetWorktreePath ?? value.cleanup.targetWorktreePath}`
+    `Branch: ${value.push?.branchName ?? value.pullRequest.head}`
   ];
+
+  if (worktreePath !== undefined) {
+    lines.push(`Worktree: ${worktreePath}`);
+  }
 
   if (value.commit !== undefined) {
     lines.push(
@@ -184,8 +192,7 @@ export function formatReleaseSuccess(
   lines.push(
     `Pull request: ${pullRequestNumber}${value.pullRequest.url}${
       value.pullRequest.reused ? " (reused)" : ""
-    }`,
-    `Cleanup: ${value.cleanup.removed ? "removed" : "not removed"}`
+    }`
   );
 
   return lines.join("\n");

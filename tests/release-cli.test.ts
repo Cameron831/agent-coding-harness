@@ -13,7 +13,7 @@ import {
   type ReleasePublishWorkflowResult
 } from "../src/index.js";
 
-const successResult: ReleasePublishWorkflowResult = {
+const successResult: Extract<ReleasePublishWorkflowResult, { ok: true }> = {
   ok: true,
   value: {
     releasePath: ".runs/issue-74/release.json",
@@ -40,6 +40,13 @@ const successResult: ReleasePublishWorkflowResult = {
       commitSha: "abc123commit",
       reused: false
     },
+    remoteBranch: {
+      targetWorktreePath: "C:/repos/worktrees/issue-74",
+      branchName: "74-release-cli",
+      remoteName: "origin",
+      expectedCommit: "abc123commit",
+      status: "missing"
+    },
     push: {
       targetWorktreePath: "C:/repos/worktrees/issue-74",
       remoteName: "origin",
@@ -55,11 +62,6 @@ const successResult: ReleasePublishWorkflowResult = {
       head: "74-release-cli",
       base: "main",
       reused: false
-    },
-    cleanup: {
-      targetRepositoryPath: "C:/repos/target",
-      targetWorktreePath: "C:/repos/worktrees/issue-74",
-      removed: true
     },
     artifacts: {
       runPath: ".runs/issue-74/run.json",
@@ -259,7 +261,7 @@ test("release CLI runner prints concise success output", async () => {
     assert.match(stdout.join("\n"), /Commit: abc123commit/);
     assert.match(stdout.join("\n"), /Pushed: origin\/74-release-cli/);
     assert.match(stdout.join("\n"), /Pull request: #74 https:\/\/github\.com\/owner\/name\/pull\/74/);
-    assert.match(stdout.join("\n"), /Cleanup: removed/);
+    assert.doesNotMatch(stdout.join("\n"), /Cleanup:/);
   });
 });
 
