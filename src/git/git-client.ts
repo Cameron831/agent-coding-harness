@@ -345,11 +345,14 @@ export class LocalGitAutomationClient implements GitAutomationClient {
         input.targetWorktreePath
       )
     ) {
-      return failure({
-        code: "validation_failed",
-        message:
-          "Target worktree path is not associated with the target repository."
-      });
+      return {
+        ok: true,
+        value: {
+          targetRepositoryPath: input.targetRepositoryPath,
+          targetWorktreePath: input.targetWorktreePath,
+          removed: false
+        }
+      };
     }
 
     const statusResult = await this.runCommand([
