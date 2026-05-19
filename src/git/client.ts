@@ -1,6 +1,8 @@
 import type {
   CleanupWorktreeInput,
   CleanupWorktreeResult,
+  DeleteLocalBranchInput,
+  DeleteLocalBranchResult,
   CheckRemoteBranchCommitInput,
   CheckRemoteBranchCommitResult,
   CommitInput,
@@ -43,4 +45,7 @@ export interface GitAutomationClient {
   cleanupWorktree(
     input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>>;
+  deleteLocalBranch(
+    input: DeleteLocalBranchInput
+  ): Promise<GitAutomationResult<DeleteLocalBranchResult>>;
 }

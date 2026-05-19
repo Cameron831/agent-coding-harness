@@ -11,6 +11,8 @@ import {
   type CreateIssueInput,
   type CreatePullRequestInput,
   type CreateWorktreeInput,
+  type DeleteLocalBranchInput,
+  type DeleteLocalBranchResult,
   type FetchRemoteTrackingRefInput,
   type FetchRemoteTrackingRefResult,
   type GetChangedFilesInput,
@@ -178,6 +180,12 @@ class FakeGitClient implements GitAutomationClient {
     _input: CleanupWorktreeInput
   ): Promise<GitAutomationResult<CleanupWorktreeResult>> {
     throw new Error("cleanupWorktree should not be called by prepare workflow tests.");
+  }
+
+  async deleteLocalBranch(
+    _input: DeleteLocalBranchInput
+  ): Promise<GitAutomationResult<DeleteLocalBranchResult>> {
+    throw new Error("deleteLocalBranch should not be called by prepare workflow tests.");
   }
 }
 

@@ -36,6 +36,16 @@ export {
   runReleasePublishWorkflow
 } from "./workflow/release/publish.js";
 export {
+  cleanupIssueWorkspaceWorkflow,
+  runCleanupIssueWorkspaceWorkflow
+} from "./workflow/cleanup/cleanup.js";
+export {
+  formatCleanupSuccess,
+  formatCleanupUsage,
+  parseCleanupCliArgs,
+  runCleanupCli
+} from "./workflow/cleanup/cli-cleanup.js";
+export {
   formatReleaseSuccess,
   formatReleaseUsage,
   parseReleaseCliArgs,
@@ -155,6 +165,20 @@ export type {
   ReleaseWorkflowRunner,
   RunReleaseCliOptions
 } from "./workflow/release/cli-release.js";
+export type {
+  CleanupIssueWorkspaceDependencies,
+  CleanupIssueWorkspaceError,
+  CleanupIssueWorkspaceFailureStage,
+  CleanupIssueWorkspaceOptions,
+  CleanupIssueWorkspaceResult,
+  CleanupIssueWorkspaceSuccess
+} from "./workflow/cleanup/cleanup.js";
+export type {
+  CleanupCliOptions,
+  CleanupCliParseResult,
+  CleanupWorkflowRunner,
+  RunCleanupCliOptions
+} from "./workflow/cleanup/cli-cleanup.js";
 export type {
   ImplementVerificationCheckResult,
   ImplementVerificationClock,
@@ -277,6 +301,8 @@ export type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteLocalBranchInput,
+  DeleteLocalBranchResult,
   FetchRemoteTrackingRefInput,
   FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
