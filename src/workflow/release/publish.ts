@@ -4,7 +4,6 @@ import type { GitAutomationClient } from "../../git/client.js";
 import { LocalGitAutomationClient } from "../../git/git-client.js";
 import type {
   CheckRemoteBranchCommitResult,
-  CleanupWorktreeResult,
   CommitResult,
   GetChangedFilesResult,
   GitAutomationError,
@@ -56,7 +55,6 @@ export type ReleasePublishWorkflowFailureStage =
   | "commit"
   | "push"
   | "pr_creation"
-  | "cleanup"
   | "artifact_write";
 
 export interface ReleasePublishWorkflowError {
@@ -77,7 +75,6 @@ export interface ReleasePublishWorkflowSuccess {
   remoteBranch?: CheckRemoteBranchCommitResult;
   push?: ReleasePublishPushResult;
   pullRequest: ReleasePublishPullRequestResult;
-  cleanup: CleanupWorktreeResult;
   artifacts: ReleaseRunArtifactResult;
 }
 
@@ -150,38 +147,6 @@ export async function runReleasePublishWorkflow(
   }
 
   const targetWorktreePath = options.targetWorktreePath;
-  if (isPublishedRun(existingRun)) {
-    const gitClient =
-      dependencies.gitClient ??
-      dependencies.createGitClient?.() ??
-      new LocalGitAutomationClient();
-    const cleanup = await cleanupReleaseWorktree(options, gitClient);
-    if (!cleanup.ok) {
-      return cleanup;
-    }
-
-    const pullRequestURL = existingRun.pullRequestURL.trim();
-    return {
-      ok: true,
-      value: {
-        releasePath: options.releasePath,
-        runPath,
-        pullRequest: {
-          repository: options.repository,
-          url: pullRequestURL,
-          head: options.branch,
-          base: options.base,
-          reused: true
-        },
-        cleanup: cleanup.value,
-        artifacts: {
-          runPath,
-          run: existingRun
-        }
-      }
-    };
-  }
-
   const beforeHead = validateBeforeHead(existingRun, runPath);
   if (!beforeHead.ok) {
     return beforeHead;
@@ -315,11 +280,6 @@ export async function runReleasePublishWorkflow(
     return failureFromThrown("artifact_write", cause);
   }
 
-  const cleanup = await cleanupReleaseWorktree(options, gitClient);
-  if (!cleanup.ok) {
-    return cleanup;
-  }
-
   return {
     ok: true,
     value: {
@@ -332,7 +292,6 @@ export async function runReleasePublishWorkflow(
       remoteBranch: pushResult.value.remoteBranch,
       push: pushResult.value.push,
       pullRequest,
-      cleanup: cleanup.value,
       artifacts
     }
   };
@@ -535,39 +494,6 @@ async function reconcilePullRequest(
       reused: false
     }
   };
-}
-
-async function cleanupReleaseWorktree(
-  options: ReleasePublishWorkflowOptions,
-  gitClient: GitAutomationClient
-): Promise<
-  | { ok: true; value: CleanupWorktreeResult }
-  | { ok: false; error: ReleasePublishWorkflowError }
-> {
-  let cleanup;
-  try {
-    cleanup = await gitClient.cleanupWorktree({
-      targetRepositoryPath: options.targetRepositoryPath,
-      targetWorktreePath: options.targetWorktreePath
-    });
-  } catch (cause) {
-    return failureFromThrown("cleanup", cause);
-  }
-  if (!cleanup.ok) {
-    return failureFromGitError("cleanup", cleanup.error);
-  }
-
-  return cleanup;
-}
-
-function isPublishedRun(run: Record<string, unknown>): run is Record<
-  string,
-  unknown
-> & {
-  status: "published";
-  pullRequestURL: string;
-} {
-  return run.status === "published" && isNonEmptyString(run.pullRequestURL);
 }
 
 function validateBeforeHead(
