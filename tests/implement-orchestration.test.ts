@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   runImplementIssueWorkflow,
@@ -48,6 +51,16 @@ const release: ImplementorReleaseMetadata = {
     summary: "Runs implementation, verification, diff capture, and artifact writing.",
     scope: ["Added implement orchestration workflow."],
     verification: ["npm test"]
+  }
+};
+
+const retryRelease: ImplementorReleaseMetadata = {
+  commit_message: "Retry implement workflow orchestration",
+  pull_request: {
+    title: "Retry implement workflow orchestration",
+    summary: "Applies verification feedback from an automatic retry.",
+    scope: ["Updated implement orchestration retry behavior."],
+    verification: ["npm test -- --test-name-pattern implement"]
   }
 };
 
@@ -267,24 +280,266 @@ test("implement issue workflow exposes release, verification, diff, and artifact
   });
 });
 
-test("implement issue workflow writes verification artifact when verification status is failed", async () => {
-  let verificationArtifactWritten = false;
+test("implement issue workflow passes without retry or feedback prompt", async () => {
+  const runsDirectory = await mkdtemp(join(tmpdir(), "implement-pass-"));
+  const agentInputs: ImplementWorkflowOptions[] = [];
+
+  const result = await runImplementIssueWorkflow(
+    {
+      ...options,
+      runsDirectory
+    },
+    {
+      agentWorkflow: async (input) => {
+        agentInputs.push(input);
+        return agentResult();
+      },
+      verificationRunner: async () => verificationResult({ status: "passed" }),
+      gitClient: new FakeGitClient(diffResult()),
+      ...artifactWriters()
+    }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(agentInputs.length, 1);
+  await assert.rejects(
+    readFile(
+      join(runsDirectory, `issue-${options.issueNumber}`, "feedback-prompt.md"),
+      "utf8"
+    ),
+    /ENOENT/
+  );
+});
+
+test("implement issue workflow retries once when first verification fails then passes", async () => {
+  const runsDirectory = await createIssueArtifactRunDirectory();
+  const feedbackPromptPath = join(
+    runsDirectory,
+    `issue-${options.issueNumber}`,
+    "feedback-prompt.md"
+  );
+  await writeFile(feedbackPromptPath, "stale automatic retry prompt", "utf8");
+  const agentInputs: ImplementWorkflowOptions[] = [];
+  const releaseInputs: WriteReleaseArtifactInput[] = [];
+  const verificationArtifactInputs: WriteVerificationArtifactInput[] = [];
+  const verificationResults = [
+    verificationResult({
+      status: "failed",
+      report: "first failed verification report"
+    }),
+    verificationResult({
+      status: "passed",
+      report: "retry passed verification report"
+    })
+  ];
+
+  const result = await runImplementIssueWorkflow(
+    {
+      ...options,
+      runsDirectory
+    },
+    {
+      agentWorkflow: async (input) => {
+        agentInputs.push(input);
+        return agentInputs.length === 1
+          ? agentResult()
+          : agentResult(retryRelease);
+      },
+      verificationRunner: async () => verificationResults.shift()!,
+      gitClient: new FakeGitClient(diffResult()),
+      ...artifactWriters({
+        writeReleaseArtifact: async (input) => {
+          releaseInputs.push(input);
+          return releaseArtifactResult(input);
+        },
+        writeVerificationArtifact: async (input) => {
+          verificationArtifactInputs.push(input);
+          return verificationArtifactResult(input);
+        }
+      })
+    }
+  );
+  const feedbackPrompt = await readFile(feedbackPromptPath, "utf8");
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.ok && result.value.release, retryRelease);
+  assert.deepEqual(result.ok && result.value.artifacts.release, retryRelease);
+  assert.equal(result.ok && result.value.verification.status, "passed");
+  assert.deepEqual(agentInputs, [
+    {
+      promptPath: options.promptPath,
+      targetWorktreePath: options.targetWorktreePath
+    },
+    {
+      promptPath: feedbackPromptPath,
+      targetWorktreePath: options.targetWorktreePath
+    }
+  ]);
+  assert.deepEqual(
+    releaseInputs.map((input) => input.release),
+    [release, retryRelease]
+  );
+  assert.deepEqual(
+    verificationArtifactInputs.map((input) => input.verificationOutput),
+    ["first failed verification report", "retry passed verification report"]
+  );
+  assert.match(feedbackPrompt, /GitHub issue #65/);
+  assert.match(feedbackPrompt, /Local retry issue title/);
+  assert.match(feedbackPrompt, /Local retry issue body\./);
+  assert.match(feedbackPrompt, /Automatic verification failed/);
+  assert.match(feedbackPrompt, /first failed verification report/);
+  assert.doesNotMatch(feedbackPrompt, /stale automatic retry prompt/);
+  assert.match(
+    feedbackPrompt,
+    /"commit_message": "Add implement workflow orchestration"/
+  );
+});
+
+test("implement issue workflow stops after one retry when verification still fails", async () => {
+  const runsDirectory = await createIssueArtifactRunDirectory();
+  const agentInputs: ImplementWorkflowOptions[] = [];
+  const runInputs: UpdateRunArtifactInput[] = [];
+  const releaseInputs: WriteReleaseArtifactInput[] = [];
+  const verificationArtifactInputs: WriteVerificationArtifactInput[] = [];
+  const verificationResults = [
+    verificationResult({
+      status: "failed",
+      report: "first failed verification report"
+    }),
+    verificationResult({
+      status: "failed",
+      report: "retry failed verification report"
+    })
+  ];
+
+  const result = await runImplementIssueWorkflow(
+    {
+      ...options,
+      runsDirectory
+    },
+    {
+      agentWorkflow: async (input) => {
+        agentInputs.push(input);
+        return agentInputs.length === 1
+          ? agentResult()
+          : agentResult(retryRelease);
+      },
+      verificationRunner: async () => verificationResults.shift()!,
+      gitClient: new FakeGitClient(diffResult()),
+      ...artifactWriters({
+        updateRunArtifact: async (input) => {
+          runInputs.push(input);
+          return runArtifactResult(input);
+        },
+        writeReleaseArtifact: async (input) => {
+          releaseInputs.push(input);
+          return releaseArtifactResult(input);
+        },
+        writeVerificationArtifact: async (input) => {
+          verificationArtifactInputs.push(input);
+          return verificationArtifactResult(input);
+        }
+      })
+    }
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.value.verification.status, "failed");
+  assert.equal(agentInputs.length, 2);
+  assert.deepEqual(
+    releaseInputs.map((input) => input.release),
+    [release, retryRelease]
+  );
+  assert.deepEqual(
+    verificationArtifactInputs.map((input) => input.verificationOutput),
+    ["first failed verification report", "retry failed verification report"]
+  );
+  assert.deepEqual(result.ok && result.value.release, retryRelease);
+  assert.deepEqual(result.ok && result.value.artifacts.release, retryRelease);
+  assert.deepEqual(
+    runInputs.map((input) => input.status),
+    ["implementing", "needsFeedback"]
+  );
+});
+
+test("implement issue workflow fails clearly before retry when issue artifact is missing or invalid", async () => {
+  const cases = [
+    {
+      name: "missing",
+      runsDirectory: await createIssueArtifactRunDirectory(null),
+      expected: /Implement issue artifact not found/
+    },
+    {
+      name: "invalid",
+      runsDirectory: await createIssueArtifactRunDirectory("{"),
+      expected: /Invalid issue artifact JSON/
+    }
+  ];
+
+  for (const issueArtifactCase of cases) {
+    let agentCalls = 0;
+
+    const result = await runImplementIssueWorkflow(
+      {
+        ...options,
+        runsDirectory: issueArtifactCase.runsDirectory
+      },
+      {
+        agentWorkflow: async () => {
+          agentCalls += 1;
+          return agentResult();
+        },
+        verificationRunner: async () =>
+          verificationResult({
+            status: "failed",
+            report: "first failed verification report"
+          }),
+        gitClient: new FakeGitClient(diffResult()),
+        ...artifactWriters()
+      }
+    );
+
+    assert.equal(result.ok, false, issueArtifactCase.name);
+    assert.equal(
+      result.ok || result.error.stage,
+      "artifact_write",
+      issueArtifactCase.name
+    );
+    assert.match(
+      result.ok ? "" : result.error.message,
+      issueArtifactCase.expected,
+      issueArtifactCase.name
+    );
+    assert.match(
+      result.ok ? "" : result.error.message,
+      /issue-65[\\/]+issue\.json/,
+      issueArtifactCase.name
+    );
+    assert.equal(agentCalls, 1, issueArtifactCase.name);
+  }
+});
+
+test("implement issue workflow does not retry artifact write failures", async () => {
+  let agentCalls = 0;
 
   const result = await runImplementIssueWorkflow(options, {
-    agentWorkflow: async () => agentResult(),
+    agentWorkflow: async () => {
+      agentCalls += 1;
+      return agentResult();
+    },
     verificationRunner: async () => verificationResult({ status: "failed" }),
     gitClient: new FakeGitClient(diffResult()),
     ...artifactWriters({
-      writeVerificationArtifact: async (input) => {
-        verificationArtifactWritten = true;
-        return verificationArtifactResult(input);
+      writeVerificationArtifact: async () => {
+        throw new Error("verification write failed");
       }
     })
   });
 
-  assert.equal(result.ok, true);
-  assert.equal(result.ok && result.value.verification.status, "failed");
-  assert.equal(verificationArtifactWritten, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.stage, "artifact_write");
+  assert.equal(result.ok || result.error.message, "verification write failed");
+  assert.equal(agentCalls, 1);
 });
 
 test("implement issue workflow stops when initial run artifact write fails", async () => {
@@ -528,11 +783,13 @@ function artifactWriters(
   };
 }
 
-function agentResult(): ImplementWorkflowResult {
+function agentResult(
+  releaseMetadata: ImplementorReleaseMetadata = release
+): ImplementWorkflowResult {
   return {
     ok: true,
     value: {
-      release
+      release: releaseMetadata
     }
   };
 }
@@ -549,6 +806,7 @@ function diffResult(): { ok: true; value: GetDiffResult } {
 
 function verificationResult(input: {
   status: "passed" | "failed";
+  report?: string;
 }): ImplementVerificationResult {
   return {
     issueNumber: options.issueNumber,
@@ -572,7 +830,7 @@ function verificationResult(input: {
       exitCode: input.status === "passed" ? 0 : 1,
       output: input.status
     },
-    report: "rendered verification report"
+    report: input.report ?? "rendered verification report"
   };
 }
 
@@ -632,4 +890,20 @@ function runArtifactResult(input: UpdateRunArtifactInput): UpdateRunArtifactResu
 
 function runDirectoryFor(input: { issueNumber: number; runsDirectory?: string }): string {
   return `${input.runsDirectory ?? ".runs"}/issue-${input.issueNumber}`;
+}
+
+async function createIssueArtifactRunDirectory(
+  issueContent: string | null = JSON.stringify({
+    number: options.issueNumber,
+    title: "Local retry issue title",
+    body: "Local retry issue body."
+  })
+): Promise<string> {
+  const runsDirectory = await mkdtemp(join(tmpdir(), "implement-retry-"));
+  const runDirectory = join(runsDirectory, `issue-${options.issueNumber}`);
+  await mkdir(runDirectory, { recursive: true });
+  if (issueContent !== null) {
+    await writeFile(join(runDirectory, "issue.json"), issueContent, "utf8");
+  }
+  return runsDirectory;
 }

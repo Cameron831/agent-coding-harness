@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { GitAutomationClient } from "../../git/client.js";
 import { LocalGitAutomationClient } from "../../git/git-client.js";
 import type {
@@ -5,7 +7,9 @@ import type {
   GitAutomationError,
   GitAutomationErrorCode
 } from "../../git/types.js";
+import type { IssueDetails } from "../../github/types.js";
 import type { ImplementorReleaseMetadata } from "../../parser/release.js";
+import { renderFeedbackPrompt } from "../prompt-builder.js";
 import {
   runImplementWorkflow,
   type ImplementWorkflowOptions,
@@ -31,6 +35,8 @@ import {
   type ImplementVerificationInput,
   type ImplementVerificationResult
 } from "./verification.js";
+
+const AUTOMATIC_VERIFICATION_RETRY_LIMIT = 1;
 
 export interface ImplementIssueWorkflowSettings {
   runsDirectory?: string;
@@ -141,63 +147,100 @@ export async function runImplementIssueWorkflow(
   }
 
   const agentWorkflow = dependencies.agentWorkflow ?? runImplementWorkflow;
-
-  let agentResult;
-  try {
-    agentResult = await agentWorkflow({
-      promptPath: options.promptPath,
-      targetWorktreePath: options.targetWorktreePath
-    });
-  } catch (cause) {
-    return failureFromThrown("agent_orchestration", cause);
-  }
-
-  if (!agentResult.ok) {
-    return {
-      ok: false,
-      error: {
-        stage: "agent_orchestration",
-        code: "unknown",
-        message: agentResult.error.message,
-        cause: agentResult.error
-      }
-    };
-  }
-
-  let releaseArtifact;
-  try {
-    releaseArtifact = await writeRelease({
-      ...artifactPathInput,
-      release: agentResult.value.release
-    });
-  } catch (cause) {
-    return failureFromThrown("artifact_write", cause);
-  }
-
   const verificationRunner =
     dependencies.verificationRunner ?? runImplementVerification;
-  let verification;
-  try {
-    verification = await verificationRunner({
-      issueNumber: options.issueNumber,
-      targetWorktreePath: options.targetWorktreePath,
-      beforeHead: options.beforeHead,
-      ...(settings.testCommand !== undefined
-        ? { testCommand: settings.testCommand }
-        : {})
-    });
-  } catch (cause) {
-    return failureFromThrown("verification", cause);
+
+  let promptPath = options.promptPath;
+  let releaseArtifact: WriteReleaseArtifactResult | undefined;
+  let verification: ImplementVerificationResult | undefined;
+  let verificationArtifact: WriteVerificationArtifactResult | undefined;
+
+  for (
+    let attemptIndex = 0;
+    attemptIndex <= AUTOMATIC_VERIFICATION_RETRY_LIMIT;
+    attemptIndex += 1
+  ) {
+    let agentResult: ImplementWorkflowResult;
+    try {
+      agentResult = await agentWorkflow({
+        promptPath,
+        targetWorktreePath: options.targetWorktreePath
+      });
+    } catch (cause) {
+      return failureFromThrown("agent_orchestration", cause);
+    }
+
+    if (!agentResult.ok) {
+      return {
+        ok: false,
+        error: {
+          stage: "agent_orchestration",
+          code: "unknown",
+          message: agentResult.error.message,
+          cause: agentResult.error
+        }
+      };
+    }
+
+    try {
+      releaseArtifact = await writeRelease({
+        ...artifactPathInput,
+        release: agentResult.value.release
+      });
+    } catch (cause) {
+      return failureFromThrown("artifact_write", cause);
+    }
+
+    try {
+      verification = await verificationRunner({
+        issueNumber: options.issueNumber,
+        targetWorktreePath: options.targetWorktreePath,
+        beforeHead: options.beforeHead,
+        ...(settings.testCommand !== undefined
+          ? { testCommand: settings.testCommand }
+          : {})
+      });
+    } catch (cause) {
+      return failureFromThrown("verification", cause);
+    }
+
+    try {
+      verificationArtifact = await writeVerification({
+        ...artifactPathInput,
+        verificationOutput: verification.report
+      });
+    } catch (cause) {
+      return failureFromThrown("artifact_write", cause);
+    }
+
+    if (
+      verification.status === "passed" ||
+      attemptIndex >= AUTOMATIC_VERIFICATION_RETRY_LIMIT
+    ) {
+      break;
+    }
+
+    try {
+      promptPath = await writeAutomaticRetryPrompt({
+        ...artifactPathInput,
+        issueNumber: options.issueNumber,
+        release: releaseArtifact.release,
+        verification
+      });
+    } catch (cause) {
+      return failureFromThrown("artifact_write", cause);
+    }
   }
 
-  let verificationArtifact;
-  try {
-    verificationArtifact = await writeVerification({
-      ...artifactPathInput,
-      verificationOutput: verification.report
-    });
-  } catch (cause) {
-    return failureFromThrown("artifact_write", cause);
+  if (
+    releaseArtifact === undefined ||
+    verification === undefined ||
+    verificationArtifact === undefined
+  ) {
+    return failureFromThrown(
+      "agent_orchestration",
+      new Error("Implement workflow completed without an implementation attempt.")
+    );
   }
 
   const gitClient = dependencies.gitClient ?? new LocalGitAutomationClient();
@@ -247,7 +290,7 @@ export async function runImplementIssueWorkflow(
   return {
     ok: true,
     value: {
-      release: agentResult.value.release,
+      release: releaseArtifact.release,
       verification,
       diff: diffResult.value,
       artifacts
@@ -256,6 +299,111 @@ export async function runImplementIssueWorkflow(
 }
 
 export const implementIssueWorkflow = runImplementIssueWorkflow;
+
+async function writeAutomaticRetryPrompt(
+  input: {
+    issueNumber: number;
+    runsDirectory?: string;
+    release: ImplementorReleaseMetadata;
+    verification: ImplementVerificationResult;
+  }
+): Promise<string> {
+  const runDirectory = join(
+    input.runsDirectory ?? ".runs",
+    `issue-${input.issueNumber}`
+  );
+  const issuePath = join(runDirectory, "issue.json");
+  const feedbackPromptPath = join(runDirectory, "feedback-prompt.md");
+  const issue = await loadIssueArtifact(issuePath, input.issueNumber);
+  const prompt = await renderFeedbackPrompt({
+    issue,
+    feedback: renderAutomaticVerificationFeedback(input.verification),
+    releaseJson: formatJson(input.release)
+  });
+
+  await writeFile(feedbackPromptPath, prompt, "utf8");
+  return feedbackPromptPath;
+}
+
+async function loadIssueArtifact(
+  issuePath: string,
+  expectedIssueNumber: number
+): Promise<IssueDetails> {
+  let content;
+  try {
+    content = await readFile(issuePath, "utf8");
+  } catch (cause) {
+    const code =
+      typeof cause === "object" && cause !== null && "code" in cause
+        ? cause.code
+        : undefined;
+    if (code === "ENOENT") {
+      throw new Error(`Implement issue artifact not found: ${issuePath}.`);
+    }
+    throw new Error(
+      `Unable to read implement issue artifact at ${issuePath}: ${messageFromUnknown(cause)}`
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (cause) {
+    throw new Error(
+      `Invalid issue artifact JSON at ${issuePath}: ${messageFromUnknown(cause)}`
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error(`Issue artifact must be a JSON object: ${issuePath}.`);
+  }
+
+  const number = getNumberProperty(parsed, "number");
+  if (number === undefined) {
+    throw new Error(
+      `Issue artifact is missing required positive integer number: ${issuePath}.`
+    );
+  }
+
+  if (number !== expectedIssueNumber) {
+    throw new Error(
+      `Issue artifact number ${number} does not match requested issue ${expectedIssueNumber}: ${issuePath}.`
+    );
+  }
+
+  const title = getStringProperty(parsed, "title");
+  if (title === undefined) {
+    throw new Error(
+      `Issue artifact is missing required string title: ${issuePath}.`
+    );
+  }
+
+  const body = getStringProperty(parsed, "body", { allowEmpty: true });
+  if (body === undefined) {
+    throw new Error(
+      `Issue artifact is missing required string body: ${issuePath}.`
+    );
+  }
+
+  return {
+    issueNumber: number,
+    title,
+    body,
+    state: "open",
+    url: ""
+  };
+}
+
+function renderAutomaticVerificationFeedback(
+  verification: ImplementVerificationResult
+): string {
+  return [
+    "Automatic verification failed after the implementation attempt.",
+    "Use the verification report below as the feedback for one targeted retry.",
+    "",
+    verification.report
+  ].join("\n");
+}
 
 function resolveSettings(
   options: ImplementIssueWorkflowOptions
@@ -298,4 +446,40 @@ function failureFromThrown(
       cause
     }
   };
+}
+
+function getNumberProperty(
+  value: Record<string, unknown>,
+  propertyName: "number"
+): number | undefined {
+  const propertyValue = value[propertyName];
+  return typeof propertyValue === "number" &&
+    Number.isSafeInteger(propertyValue) &&
+    propertyValue > 0
+    ? propertyValue
+    : undefined;
+}
+
+function getStringProperty(
+  value: Record<string, unknown>,
+  propertyName: "title" | "body",
+  options: { allowEmpty?: boolean } = {}
+): string | undefined {
+  const propertyValue = value[propertyName];
+  return typeof propertyValue === "string" &&
+    (options.allowEmpty === true || propertyValue.trim() !== "")
+    ? propertyValue
+    : undefined;
+}
+
+function formatJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function messageFromUnknown(value: unknown): string {
+  return value instanceof Error ? value.message : String(value);
 }
