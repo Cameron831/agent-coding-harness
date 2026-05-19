@@ -174,6 +174,30 @@ test("routes release subcommand to injected runner with forwarded argv", async (
   assert.deepEqual(capturedArgs, ["--issue", "77"]);
 });
 
+test("routes cleanup subcommand to injected runner with forwarded argv", async () => {
+  let capturedArgs: readonly string[] | undefined;
+  let capturedStdout: unknown;
+  let capturedStderr: unknown;
+  const stdout = () => undefined;
+  const stderr = () => undefined;
+
+  const exitCode = await runCli(["cleanup", "--issue", "77"], {
+    stdout,
+    stderr,
+    runCleanupCli: async (args, options) => {
+      capturedArgs = args;
+      capturedStdout = options?.stdout;
+      capturedStderr = options?.stderr;
+      return 37;
+    }
+  });
+
+  assert.equal(exitCode, 37);
+  assert.deepEqual(capturedArgs, ["--issue", "77"]);
+  assert.equal(capturedStdout, stdout);
+  assert.equal(capturedStderr, stderr);
+});
+
 test("unknown subcommands and missing arguments return top-level usage", async () => {
   const unknownStderr: string[] = [];
   const missingStderr: string[] = [];
@@ -201,6 +225,7 @@ test("top-level usage lists staged commands without workflow-local options", () 
   assert.match(usage, /agent-workforce prepare \[prepare options\]/);
   assert.match(usage, /agent-workforce implement \[implement options\]/);
   assert.match(usage, /agent-workforce release \[release publish options\]/);
+  assert.match(usage, /agent-workforce cleanup \[cleanup options\]/);
   assert.match(usage, /manual PR from release\.json/);
   assert.doesNotMatch(usage, /--target-repo/);
   assert.doesNotMatch(usage, /--worktree-parent/);
@@ -218,6 +243,7 @@ test("package scripts expose top-level staged workflow commands", async () => {
     "node dist/src/cli.js implement"
   );
   assert.equal(packageJson.scripts["workflow:release"], "node dist/src/cli.js release");
+  assert.equal(packageJson.scripts["workflow:cleanup"], "node dist/src/cli.js cleanup");
   assert.equal(packageJson.scripts["plan:issues"], "node dist/src/cli.js");
   assert.equal(packageJson.scripts["release:pr"], "node dist/src/cli.js");
 });

@@ -14,6 +14,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteLocalBranchInput,
+  DeleteLocalBranchResult,
   FetchRemoteTrackingRefInput,
   FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
@@ -368,7 +370,7 @@ export class LocalGitAutomationClient implements GitAutomationClient {
     if (statusResult.value.stdout.trim() !== "" && input.force !== true) {
       return failure({
         code: "validation_failed",
-        message: "Target worktree has uncommitted changes. Use force to remove it."
+        message: "Target worktree has uncommitted changes."
       });
     }
 
@@ -404,6 +406,59 @@ export class LocalGitAutomationClient implements GitAutomationClient {
         targetRepositoryPath: input.targetRepositoryPath,
         targetWorktreePath: input.targetWorktreePath,
         removed: true
+      }
+    };
+  }
+
+  async deleteLocalBranch(
+    input: DeleteLocalBranchInput
+  ): Promise<GitAutomationResult<DeleteLocalBranchResult>> {
+    const validationError = validateDeleteLocalBranchInput(input);
+    if (validationError) {
+      return failure(validationError);
+    }
+
+    const listResult = await this.runCommand([
+      "-C",
+      input.targetRepositoryPath,
+      "branch",
+      "--list",
+      "--format=%(refname:short)",
+      "--",
+      input.branchName
+    ]);
+    if (!listResult.ok) {
+      return listResult;
+    }
+
+    if (!branchListContains(listResult.value.stdout, input.branchName)) {
+      return {
+        ok: true,
+        value: {
+          targetRepositoryPath: input.targetRepositoryPath,
+          branchName: input.branchName,
+          deleted: false
+        }
+      };
+    }
+
+    const result = await this.runCommand([
+      "-C",
+      input.targetRepositoryPath,
+      "branch",
+      "-d",
+      input.branchName
+    ]);
+    if (!result.ok) {
+      return result;
+    }
+
+    return {
+      ok: true,
+      value: {
+        targetRepositoryPath: input.targetRepositoryPath,
+        branchName: input.branchName,
+        deleted: true
       }
     };
   }
@@ -633,6 +688,27 @@ function validateCleanupWorktreeInput(
   return undefined;
 }
 
+function validateDeleteLocalBranchInput(
+  input: DeleteLocalBranchInput
+): GitAutomationError | undefined {
+  const targetRepositoryPathError = validateCleanupPath(
+    input.targetRepositoryPath,
+    "Target repository path"
+  );
+  if (targetRepositoryPathError) {
+    return targetRepositoryPathError;
+  }
+
+  if (typeof input.branchName !== "string" || input.branchName.trim() === "") {
+    return {
+      code: "validation_failed",
+      message: "Branch name is required."
+    };
+  }
+
+  return undefined;
+}
+
 function validateCleanupPath(
   pathValue: string,
   label: string
@@ -682,6 +758,16 @@ function isKnownWorktreePath(
 
 function normalizePathForComparison(pathValue: string): string {
   return path.normalize(pathValue.trim()).replaceAll("\\", "/").toLowerCase();
+}
+
+function branchListContains(
+  branchListOutput: string,
+  branchName: string
+): boolean {
+  return branchListOutput
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .some((line) => line === branchName);
 }
 
 function parseLsRemoteHeadCommit(
