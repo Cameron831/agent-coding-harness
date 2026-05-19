@@ -10,6 +10,7 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "workflow": "node dist/src/cli.js",
+    "workflow:run": "node dist/src/cli.js run",
     "workflow:prepare": "node dist/src/cli.js prepare",
     "workflow:implement": "node dist/src/cli.js implement",
     "workflow:release": "node dist/src/cli.js release",

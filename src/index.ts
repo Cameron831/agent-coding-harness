@@ -52,6 +52,12 @@ export {
   runReleaseCli
 } from "./workflow/release/cli-release.js";
 export {
+  formatRunSuccess,
+  formatRunUsage,
+  parseRunCliArgs,
+  runRunCli
+} from "./workflow/run/cli-run.js";
+export {
   LocalImplementVerificationCommandRunner,
   renderImplementVerificationReport,
   runImplementVerification
@@ -173,6 +179,12 @@ export type {
   CleanupWorkflowRunner,
   RunCleanupCliOptions
 } from "./workflow/cleanup/cli-cleanup.js";
+export type {
+  RunRunCliOptions,
+  RunStageCliRunner,
+  RunWorkflowCliOptions,
+  RunWorkflowCliParseResult
+} from "./workflow/run/cli-run.js";
 export type {
   ImplementVerificationCheckResult,
   ImplementVerificationClock,

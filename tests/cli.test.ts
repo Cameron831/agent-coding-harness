@@ -100,6 +100,59 @@ class FakeGitHubClient implements GitHubAutomationClient {
   }
 }
 
+test("routes run subcommand to injected runner with forwarded argv", async () => {
+  let capturedArgs: readonly string[] | undefined;
+  let capturedStdout: unknown;
+  let capturedStderr: unknown;
+  const stdout = () => undefined;
+  const stderr = () => undefined;
+
+  const exitCode = await runCli(["run", "--issue", "77"], {
+    stdout,
+    stderr,
+    runRunCli: async (args, options) => {
+      capturedArgs = args;
+      capturedStdout = options?.stdout;
+      capturedStderr = options?.stderr;
+      return 11;
+    }
+  });
+
+  assert.equal(exitCode, 11);
+  assert.deepEqual(capturedArgs, ["--issue", "77"]);
+  assert.equal(capturedStdout, stdout);
+  assert.equal(capturedStderr, stderr);
+});
+
+test("routes run subcommand through injected stage runners", async () => {
+  const calls: string[] = [];
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(["run", "--issue", "77"], {
+    stdout: (message) => stdout.push(message),
+    runPrepareCli: async (args) => {
+      calls.push(`prepare:${args.join(" ")}`);
+      return 0;
+    },
+    runImplementCli: async (args) => {
+      calls.push(`implement:${args.join(" ")}`);
+      return 0;
+    },
+    runReleaseCli: async (args) => {
+      calls.push(`release:${args.join(" ")}`);
+      return 0;
+    }
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(calls, [
+    "prepare:--issue 77",
+    "implement:--issue 77",
+    "release:--issue 77"
+  ]);
+  assert.match(stdout.join("\n"), /issue #77/);
+});
+
 test("routes prepare subcommand to injected runner with forwarded argv", async () => {
   let capturedArgs: readonly string[] | undefined;
   let capturedStdout: unknown;
@@ -198,6 +251,7 @@ test("unknown subcommands and missing arguments return top-level usage", async (
 
   assert.equal(unknownExitCode, 1);
   assert.match(unknownStderr.join("\n"), /Unexpected positional argument: deploy/);
+  assert.match(unknownStderr.join("\n"), /agent-workforce run --issue <number>/);
   assert.match(unknownStderr.join("\n"), /agent-workforce prepare/);
   assert.match(unknownStderr.join("\n"), /agent-workforce release/);
 
@@ -209,6 +263,7 @@ test("unknown subcommands and missing arguments return top-level usage", async (
 test("top-level usage lists staged commands without workflow-local options", () => {
   const usage = formatUsage();
 
+  assert.match(usage, /agent-workforce run --issue <number>/);
   assert.match(usage, /agent-workforce prepare \[prepare options\]/);
   assert.match(usage, /agent-workforce implement \[implement options\]/);
   assert.match(usage, /agent-workforce release \[release publish options\]/);
@@ -229,6 +284,7 @@ test("package scripts expose top-level staged workflow commands", async () => {
   };
 
   assert.equal(packageJson.scripts.workflow, "node dist/src/cli.js");
+  assert.equal(packageJson.scripts["workflow:run"], "node dist/src/cli.js run");
   assert.equal(packageJson.scripts["workflow:prepare"], "node dist/src/cli.js prepare");
   assert.equal(
     packageJson.scripts["workflow:implement"],
@@ -243,6 +299,8 @@ test("package scripts expose top-level staged workflow commands", async () => {
 test("README documents top-level staged commands and planner issue creation", async () => {
   const readme = await readFile("README.md", "utf8");
 
+  assert.match(readme, /npm run workflow -- run --issue <issue-number>/);
+  assert.match(readme, /release stage publishes the pull request/);
   assert.match(readme, /npm run workflow -- prepare /);
   assert.match(readme, /npm run workflow -- implement /);
   assert.match(readme, /npm run workflow -- release /);

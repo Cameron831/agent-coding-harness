@@ -13,6 +13,7 @@ import { runCleanupCli as runCleanupWorkflowLocalCli } from "./workflow/cleanup/
 import { runImplementCli as runImplementWorkflowLocalCli } from "./workflow/implement/cli-implement.js";
 import { runPrepareCli as runPrepareWorkflowLocalCli } from "./workflow/prepare/cli-prepare.js";
 import { runReleaseCli as runReleaseWorkflowLocalCli } from "./workflow/release/cli-release.js";
+import { runRunCli as runRunWorkflowLocalCli } from "./workflow/run/cli-run.js";
 
 export interface PlannerIssueCliOptions {
   planPath: string;
@@ -52,11 +53,13 @@ export interface RunCliOptions {
   runImplementCli?: WorkflowLocalCliRunner;
   runReleaseCli?: WorkflowLocalCliRunner;
   runCleanupCli?: WorkflowLocalCliRunner;
+  runRunCli?: WorkflowLocalCliRunner;
 }
 
 export function formatUsage(): string {
   return [
     "Usage:",
+    "  agent-workforce run --issue <number>",
     "  agent-workforce prepare [prepare options]",
     "  agent-workforce implement [implement options]",
     "  agent-workforce release [release publish options]",
@@ -65,6 +68,7 @@ export function formatUsage(): string {
     "  agent-workforce-plan-issues --plan <path> [--repo owner/name] [--dry-run]",
     "",
     "Commands:",
+    "  run                Run prepare, implement, and release for one issue.",
     "  prepare            Run the staged prepare workflow.",
     "  implement          Run the staged implement workflow.",
     "  release            Publish the staged release workflow.",
@@ -170,6 +174,23 @@ export async function runCli(
   const loadPlan = options.loadPlan ?? loadPlannerPlan;
 
   const [command, ...commandArgs] = args;
+  if (command === "run") {
+    if (options.runRunCli !== undefined) {
+      return options.runRunCli(commandArgs, {
+        stdout,
+        stderr
+      });
+    }
+
+    return runRunWorkflowLocalCli(commandArgs, {
+      stdout,
+      stderr,
+      runPrepareCli: options.runPrepareCli,
+      runImplementCli: options.runImplementCli,
+      runReleaseCli: options.runReleaseCli
+    });
+  }
+
   if (command === "prepare") {
     return (options.runPrepareCli ?? runPrepareWorkflowLocalCli)(commandArgs, {
       stdout,
