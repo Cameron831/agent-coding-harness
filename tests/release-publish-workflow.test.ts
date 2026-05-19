@@ -19,6 +19,8 @@ import {
   type CreateIssueInput,
   type CreatePullRequestInput,
   type CreateWorktreeInput,
+  type DeleteLocalBranchInput,
+  type DeleteLocalBranchResult,
   type FetchRemoteTrackingRefInput,
   type FetchRemoteTrackingRefResult,
   type GetChangedFilesInput,
@@ -228,6 +230,14 @@ class FakeGitClient implements GitAutomationClient {
           removed: true
         }
       }
+    );
+  }
+
+  async deleteLocalBranch(
+    _input: DeleteLocalBranchInput
+  ): Promise<GitAutomationResult<DeleteLocalBranchResult>> {
+    throw new Error(
+      "deleteLocalBranch should not be called by release publish tests."
     );
   }
 }

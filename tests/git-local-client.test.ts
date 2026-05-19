@@ -6,12 +6,14 @@ import {
   type CleanupWorktreeInput,
   type CommitInput,
   type CreateWorktreeInput,
+  type DeleteLocalBranchInput,
   type FetchRemoteTrackingRefInput,
   type GetChangedFilesInput,
   type GetDiffInput,
   type GetHeadInput,
   type GitCommandResult,
   type GitCommandRunner,
+  type DeleteLocalBranchResult,
   type PushBranchInput,
   type StageFilesInput
 } from "../src/index.js";
@@ -25,6 +27,10 @@ const validWorktreePath = "C:/repos/worktrees/issue-22";
 const validCleanupInput: CleanupWorktreeInput = {
   targetRepositoryPath: "C:/repos/target",
   targetWorktreePath: "C:/repos/worktrees/issue-23"
+};
+const validDeleteLocalBranchInput: DeleteLocalBranchInput = {
+  targetRepositoryPath: "C:/repos/target",
+  branchName: "issue-23"
 };
 
 class FakeGitCommandRunner implements GitCommandRunner {
@@ -522,6 +528,70 @@ test("LocalGitAutomationClient removes a clean associated worktree from the targ
   });
 });
 
+test("LocalGitAutomationClient deletes a local branch from the target repository without force", async () => {
+  const runner = new FakeGitCommandRunner([
+    { exitCode: 0, stdout: "issue-23\n", stderr: "" },
+    { exitCode: 0, stdout: "Deleted branch issue-23.\n", stderr: "" }
+  ]);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.deleteLocalBranch(validDeleteLocalBranchInput);
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "branch",
+      "--list",
+      "--format=%(refname:short)",
+      "--",
+      "issue-23"
+    ],
+    ["-C", "C:/repos/target", "branch", "-d", "issue-23"]
+  ]);
+  assert.equal(runner.calls.flat().includes("-D"), false);
+  assert.equal(runner.calls.flat().includes("--force"), false);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetRepositoryPath: "C:/repos/target",
+      branchName: "issue-23",
+      deleted: true
+    } satisfies DeleteLocalBranchResult
+  });
+});
+
+test("LocalGitAutomationClient treats a missing local branch as an idempotent no-op", async () => {
+  const runner = new FakeGitCommandRunner({
+    exitCode: 0,
+    stdout: "",
+    stderr: ""
+  });
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.deleteLocalBranch(validDeleteLocalBranchInput);
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "branch",
+      "--list",
+      "--format=%(refname:short)",
+      "--",
+      "issue-23"
+    ]
+  ]);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      targetRepositoryPath: "C:/repos/target",
+      branchName: "issue-23",
+      deleted: false
+    } satisfies DeleteLocalBranchResult
+  });
+});
+
 test("LocalGitAutomationClient includes force only for explicit force cleanup", async () => {
   const runner = new FakeGitCommandRunner([
     {
@@ -740,6 +810,41 @@ test("LocalGitAutomationClient validates cleanupWorktree input before running gi
     const client = new LocalGitAutomationClient(runner);
 
     const result = await client.cleanupWorktree(input as CleanupWorktreeInput);
+
+    assert.equal(result.ok, false, caseName);
+    assert.equal(result.ok || result.error.code, "validation_failed", caseName);
+    assert.deepEqual(runner.calls, [], caseName);
+  }
+});
+
+test("LocalGitAutomationClient validates deleteLocalBranch input before running git", async () => {
+  const cases: Array<[string, Partial<DeleteLocalBranchInput>]> = [
+    ["missing targetRepositoryPath", { branchName: "issue-23" }],
+    [
+      "blank targetRepositoryPath",
+      { ...validDeleteLocalBranchInput, targetRepositoryPath: " " }
+    ],
+    [
+      "broad targetRepositoryPath",
+      { ...validDeleteLocalBranchInput, targetRepositoryPath: "C:/" }
+    ],
+    [
+      "missing branchName",
+      { targetRepositoryPath: validDeleteLocalBranchInput.targetRepositoryPath }
+    ],
+    [
+      "blank branchName",
+      { ...validDeleteLocalBranchInput, branchName: "\t" }
+    ]
+  ];
+
+  for (const [caseName, input] of cases) {
+    const runner = new FakeGitCommandRunner();
+    const client = new LocalGitAutomationClient(runner);
+
+    const result = await client.deleteLocalBranch(
+      input as DeleteLocalBranchInput
+    );
 
     assert.equal(result.ok, false, caseName);
     assert.equal(result.ok || result.error.code, "validation_failed", caseName);
@@ -1280,6 +1385,43 @@ test("LocalGitAutomationClient returns cleanup remove git failures with the comm
     assert.equal(
       result.error.message,
       "fatal: worktree contains modified or untracked files"
+    );
+    assert.equal(result.error.cause, gitResult);
+  }
+});
+
+test("LocalGitAutomationClient returns deleteLocalBranch non-zero git failures with the command result as cause", async () => {
+  const gitResult = {
+    exitCode: 1,
+    stdout: "",
+    stderr: "error: The branch 'issue-23' is not fully merged.\n"
+  };
+  const runner = new FakeGitCommandRunner([
+    { exitCode: 0, stdout: "issue-23\n", stderr: "" },
+    gitResult
+  ]);
+  const client = new LocalGitAutomationClient(runner);
+
+  const result = await client.deleteLocalBranch(validDeleteLocalBranchInput);
+
+  assert.deepEqual(runner.calls, [
+    [
+      "-C",
+      "C:/repos/target",
+      "branch",
+      "--list",
+      "--format=%(refname:short)",
+      "--",
+      "issue-23"
+    ],
+    ["-C", "C:/repos/target", "branch", "-d", "issue-23"]
+  ]);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.code, "unknown");
+    assert.equal(
+      result.error.message,
+      "error: The branch 'issue-23' is not fully merged."
     );
     assert.equal(result.error.cause, gitResult);
   }

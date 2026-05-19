@@ -5,6 +5,7 @@ import type {
   CheckRemoteBranchCommitResult,
   CleanupWorktreeResult,
   CommitResult,
+  DeleteLocalBranchResult,
   FetchRemoteTrackingRefResult,
   GetChangedFilesResult,
   GetDiffResult,
@@ -95,6 +96,13 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
         targetWorktreePath: input.targetWorktreePath,
         removed: true
       });
+    },
+    async deleteLocalBranch(input) {
+      return ok<DeleteLocalBranchResult>({
+        targetRepositoryPath: input.targetRepositoryPath,
+        branchName: input.branchName,
+        deleted: true
+      });
     }
   };
 
@@ -143,6 +151,10 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
     targetWorktreePath,
     force: true
   });
+  const localBranch = await fakeClient.deleteLocalBranch({
+    targetRepositoryPath,
+    branchName: "issue-20-git-contract"
+  });
 
   assert.equal(fetched.ok && fetched.value.remoteName, "origin");
   assert.equal(worktree.ok && worktree.value.targetRepositoryPath, targetRepositoryPath);
@@ -154,6 +166,7 @@ test("GitAutomationClient can be satisfied by a typed fake client", async () => 
   assert.equal(remoteBranch.ok && remoteBranch.value.status, "matches");
   assert.equal(push.ok && push.value.remoteName, "origin");
   assert.equal(cleanup.ok && cleanup.value.removed, true);
+  assert.equal(localBranch.ok && localBranch.value.deleted, true);
 });
 
 test("GitCommandRunner can be satisfied without invoking real git", async () => {

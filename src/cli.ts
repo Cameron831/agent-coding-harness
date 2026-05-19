@@ -23,6 +23,7 @@ import {
   type BranchResolutionResult,
   type ReleasePullRequestWorkflowOptions
 } from "./workflow/create-pull-request.js";
+import { runCleanupCli as runCleanupWorkflowLocalCli } from "./workflow/cleanup/cli-cleanup.js";
 import { runImplementCli as runImplementWorkflowLocalCli } from "./workflow/implement/cli-implement.js";
 import { runPrepareCli as runPrepareWorkflowLocalCli } from "./workflow/prepare/cli-prepare.js";
 import { runReleaseCli as runReleaseWorkflowLocalCli } from "./workflow/release/cli-release.js";
@@ -71,6 +72,7 @@ export interface RunCliOptions {
   runPrepareCli?: WorkflowLocalCliRunner;
   runImplementCli?: WorkflowLocalCliRunner;
   runReleaseCli?: WorkflowLocalCliRunner;
+  runCleanupCli?: WorkflowLocalCliRunner;
 }
 
 export function formatUsage(): string {
@@ -79,6 +81,7 @@ export function formatUsage(): string {
     "  agent-workforce prepare [prepare options]",
     "  agent-workforce implement [implement options]",
     "  agent-workforce release [release publish options]",
+    "  agent-workforce cleanup [cleanup options]",
     "  agent-workforce --plan <path> [--repo owner/name] [--dry-run]",
     "  agent-workforce --release <path> [--repo owner/name] [--base branch] [--head branch] [--dry-run]",
     "  agent-workforce-plan-issues --plan <path> [--repo owner/name] [--dry-run]",
@@ -88,6 +91,7 @@ export function formatUsage(): string {
     "  prepare            Run the staged prepare workflow.",
     "  implement          Run the staged implement workflow.",
     "  release            Publish the staged release workflow.",
+    "  cleanup            Clean up an issue worktree and local branch.",
     "",
     "Legacy root modes:",
     "  --plan <path>       Create issues from a planner plan.json artifact.",
@@ -266,6 +270,13 @@ export async function runCli(
 
   if (command === "release") {
     return (options.runReleaseCli ?? runReleaseWorkflowLocalCli)(commandArgs, {
+      stdout,
+      stderr
+    });
+  }
+
+  if (command === "cleanup") {
+    return (options.runCleanupCli ?? runCleanupWorkflowLocalCli)(commandArgs, {
       stdout,
       stderr
     });

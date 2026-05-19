@@ -15,6 +15,8 @@ import type {
   CommitInput,
   CommitResult,
   CreateWorktreeInput,
+  DeleteLocalBranchInput,
+  DeleteLocalBranchResult,
   FetchRemoteTrackingRefInput,
   FetchRemoteTrackingRefResult,
   GetChangedFilesInput,
@@ -82,6 +84,12 @@ class FakeGitClient implements GitAutomationClient {
   }
 
   async cleanupWorktree(): Promise<GitAutomationResult<CleanupWorktreeResult>> {
+    throw new Error("not used");
+  }
+
+  async deleteLocalBranch(
+    _input: DeleteLocalBranchInput
+  ): Promise<GitAutomationResult<DeleteLocalBranchResult>> {
     throw new Error("not used");
   }
 }
