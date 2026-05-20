@@ -1,0 +1,7 @@
+{
+"id": "worktree-cleanup-idempotency",
+"testCommand": "npm run test",
+"allowedChangedFiles": [
+		"src/git/git-client.ts"
+	]
+}
