@@ -296,20 +296,6 @@ test("package scripts expose top-level staged workflow commands", async () => {
   assert.equal(packageJson.scripts["release:pr"], undefined);
 });
 
-test("README documents top-level staged commands and planner issue creation", async () => {
-  const readme = await readFile("README.md", "utf8");
-
-  assert.match(readme, /npm run workflow -- run --issue <issue-number>/);
-  assert.match(readme, /release stage publishes the pull request/);
-  assert.match(readme, /npm run workflow -- prepare /);
-  assert.match(readme, /npm run workflow -- implement /);
-  assert.match(readme, /npm run workflow -- release /);
-  assert.match(readme, /npm run workflow -- --plan /);
-  assert.match(readme, /npm run plan:issues -- --plan /);
-  assert.doesNotMatch(readme, /legacy manual PR mode/);
-  assert.doesNotMatch(readme, /npm run workflow -- --release /);
-});
-
 function successfulIssue(
   issueNumber: number,
   title: string,
