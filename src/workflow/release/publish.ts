@@ -30,7 +30,9 @@ import {
 import {
   loadReleaseRunArtifact,
   updateRunStatus,
+  writeBeforeHeadRunArtifact,
   writePullRequestRunArtifact,
+  type BeforeHeadRunInput,
   type PullRequestRunInput,
   type RunPathInput,
   type UpdateRunStatusInput,
@@ -123,6 +125,9 @@ export interface ReleasePublishWorkflowDependencies {
   ) => Promise<Record<string, unknown>>;
   updateRunStatus?: (
     input: UpdateRunStatusInput
+  ) => Promise<ReleaseRunArtifactResult>;
+  writeBeforeHeadRunArtifact?: (
+    input: BeforeHeadRunInput
   ) => Promise<ReleaseRunArtifactResult>;
   writePullRequestRunArtifact?: (
     input: PullRequestRunInput
@@ -250,6 +255,17 @@ export async function runReleasePublishWorkflow(
   });
   if (!pushResult.ok) {
     return pushResult;
+  }
+
+  try {
+    const writeBeforeHeadRun =
+      dependencies.writeBeforeHeadRunArtifact ?? writeBeforeHeadRunArtifact;
+    await writeBeforeHeadRun({
+      runPath,
+      beforeHead: commit.commitSha
+    });
+  } catch (cause) {
+    return failureFromThrown("artifact_write", cause);
   }
 
   const pullRequestResult = await reconcilePullRequest(

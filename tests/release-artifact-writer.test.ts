@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   loadReleaseRunArtifact,
   updateRunStatus,
+  writeBeforeHeadRunArtifact,
   writePullRequestRunArtifact
 } from "../src/index.js";
 
@@ -141,6 +142,55 @@ test("writePullRequestRunArtifact can persist a PR URL on any JSON object", asyn
   });
 });
 
+test("writeBeforeHeadRunArtifact writes beforeHead and preserves unrelated fields", async () => {
+  await withTempCwd(async (root) => {
+    const runPath = path.join(root, "run.json");
+    const run = {
+      ...approvedRun,
+      status: "publishing",
+      reviewer: "main-agent",
+      nested: { keep: true }
+    };
+    await writeJson(runPath, run);
+
+    const result = await writeBeforeHeadRunArtifact({
+      runPath,
+      beforeHead: "def456release"
+    });
+
+    assert.deepEqual(result.run, {
+      ...run,
+      beforeHead: "def456release"
+    });
+    assert.equal(
+      await readFile(runPath, "utf8"),
+      `${JSON.stringify(result.run, null, 2)}\n`
+    );
+  });
+});
+
+test("writeBeforeHeadRunArtifact rejects invalid beforeHead before mutation", async () => {
+  await withTempCwd(async (root) => {
+    const runPath = path.join(root, "run.json");
+    await writeJson(runPath, approvedRun);
+
+    for (const beforeHead of [" ", undefined]) {
+      await assert.rejects(
+        writeBeforeHeadRunArtifact({
+          runPath,
+          beforeHead: beforeHead as string
+        }),
+        /beforeHead must be a non-empty string/
+      );
+    }
+
+    assert.equal(
+      await readFile(runPath, "utf8"),
+      `${JSON.stringify(approvedRun, null, 2)}\n`
+    );
+  });
+});
+
 test("writePullRequestRunArtifact rejects blank PR URLs before mutation", async () => {
   await withTempCwd(async (root) => {
     const runPath = path.join(root, "run.json");
@@ -161,7 +211,7 @@ test("writePullRequestRunArtifact rejects blank PR URLs before mutation", async 
   });
 });
 
-test("updateRunStatus and writePullRequestRunArtifact reject invalid artifacts before mutation", async () => {
+test("release artifact writers reject invalid artifacts before mutation", async () => {
   const cases = [
     {
       name: "updateRunStatus",
@@ -173,6 +223,14 @@ test("updateRunStatus and writePullRequestRunArtifact reject invalid artifacts b
         writePullRequestRunArtifact({
           runPath,
           pullRequestURL: "https://github.com/example/repo/pull/70"
+        })
+    },
+    {
+      name: "writeBeforeHeadRunArtifact",
+      write: (runPath: string) =>
+        writeBeforeHeadRunArtifact({
+          runPath,
+          beforeHead: "def456release"
         })
     }
   ];
