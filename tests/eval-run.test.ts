@@ -8,6 +8,10 @@ import {
   type EvalAgentOrchestrationInput,
   type EvalRunContext
 } from "../evals/run.js";
+import type {
+  EvalWorkspaceGitCommand,
+  EvalWorkspaceGitRunner
+} from "../evals/workspace.js";
 
 const caseID = "worktree-cleanup-idempotency";
 const fixedDate = new Date("2026-05-20T21:30:04.005Z");
@@ -84,6 +88,77 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
     assert.match(stdout[0], new RegExp(`Started: ${startedAt}`));
     assert.match(stdout[0], /Status: success/);
     assert.doesNotMatch(stdout[0], /Failure:/);
+  });
+});
+
+test("eval runner default setup uses eval parent path as target worktree", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    await writeEvalFixture(repositoryRoot, caseID);
+    const evalParentPath = join(repositoryRoot, "eval-temp");
+    const expectedTempPath = join(evalParentPath, caseID, runID);
+    const gitRunner = new RecordingEvalWorkspaceGitRunner();
+    const stdout: string[] = [];
+    let agentInput: EvalAgentOrchestrationInput | undefined;
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      evalParentPath,
+      workspaceDependencies: { gitRunner },
+      clock: () => fixedDate,
+      stdout: (message) => stdout.push(message),
+      runAgent: async (input) => {
+        agentInput = input;
+        return { ok: true };
+      },
+      grade: async () => ({
+        ok: true,
+        value: {
+          status: "success"
+        }
+      })
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(agentInput?.targetWorktreePath, expectedTempPath);
+    await access(join(expectedTempPath, "package.json"));
+    await access(join(expectedTempPath, "src", "index.ts"));
+    assert.deepEqual(gitRunner.commands, [
+      { cwd: expectedTempPath, args: ["init"] },
+      { cwd: expectedTempPath, args: ["add", "."] },
+      { cwd: expectedTempPath, args: ["commit", "-m", "fixture baseline"] }
+    ]);
+    assert.match(stdout.join("\n"), /Status: success/);
+  });
+});
+
+test("eval runner reports default workspace setup git failures", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    await writeEvalFixture(repositoryRoot, caseID);
+    const stdout: string[] = [];
+    let agentInvoked = false;
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      evalParentPath: join(repositoryRoot, "eval-temp"),
+      workspaceDependencies: {
+        gitRunner: new RecordingEvalWorkspaceGitRunner(async () => {
+          throw new Error("git is unavailable");
+        })
+      },
+      clock: () => fixedDate,
+      stdout: (message) => stdout.push(message),
+      runAgent: async () => {
+        agentInvoked = true;
+        return { ok: true };
+      }
+    });
+
+    assert.equal(exitCode, 1);
+    assert.equal(agentInvoked, false);
+    assert.match(stdout.join("\n"), /Workspace setup failed/);
+    assert.match(stdout.join("\n"), /git is unavailable/);
   });
 });
 
@@ -376,6 +451,33 @@ async function writeEvalCase(
   await mkdir(caseDirectory, { recursive: true });
   await writeFile(join(caseDirectory, "case.json"), formatJson(metadata), "utf8");
   await writeFile(join(caseDirectory, "prompt.md"), "Implement the eval case.", "utf8");
+}
+
+async function writeEvalFixture(repositoryRoot: string, id: string): Promise<void> {
+  const fixtureDirectory = join(repositoryRoot, "evals", id, "fixture");
+  await mkdir(join(fixtureDirectory, "src"), { recursive: true });
+  await writeFile(join(fixtureDirectory, "package.json"), '{"name":"fixture"}\n');
+  await writeFile(
+    join(fixtureDirectory, "src", "index.ts"),
+    "export const value = 1;\n"
+  );
+}
+
+class RecordingEvalWorkspaceGitRunner implements EvalWorkspaceGitRunner {
+  readonly commands: EvalWorkspaceGitCommand[] = [];
+
+  constructor(
+    private readonly onRun: (command: EvalWorkspaceGitCommand) => Promise<void> | void = () => {}
+  ) {}
+
+  async run(command: EvalWorkspaceGitCommand): Promise<void> {
+    const recorded = {
+      cwd: command.cwd,
+      args: [...command.args]
+    };
+    this.commands.push(recorded);
+    await this.onRun(recorded);
+  }
 }
 
 async function withTemporaryRepository<T>(
