@@ -7,6 +7,7 @@ import {
   renderReleasePullRequestBody,
   runReleasePublishWorkflow,
   updateRunStatus,
+  writeBeforeHeadRunArtifact,
   writePullRequestRunArtifact,
   type AutomationResult,
   type CleanupWorktreeInput,
@@ -317,6 +318,7 @@ test("release publish workflow commits, pushes, creates PR, and writes published
           events.push(`updateRunStatus:${input.status}`);
           return updateRunStatus(input);
         },
+        writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
         writePullRequestRunArtifact: async (input) => {
           events.push("writePullRequest");
           return writePullRequestRunArtifact(input);
@@ -333,6 +335,7 @@ test("release publish workflow commits, pushes, creates PR, and writes published
       "commit",
       "checkRemoteBranchCommit",
       "pushBranch",
+      "writeBeforeHead",
       "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
@@ -394,6 +397,7 @@ test("release publish workflow commits, pushes, creates PR, and writes published
       unknown
     >;
     assert.equal(persistedRun.status, "published");
+    assert.equal(persistedRun.beforeHead, "commit123");
     assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/70");
     assert.equal(persistedRun.commitSha, undefined);
     assert.equal(persistedRun.pullRequestNumber, undefined);
@@ -445,6 +449,7 @@ test("published run with PR URL follows idempotent publish reconciliation", asyn
             events.push(`updateRunStatus:${input.status}`);
             return updateRunStatus(input);
           },
+          writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
           writePullRequestRunArtifact: async (input) => {
             events.push("writePullRequest");
             return writePullRequestRunArtifact(input);
@@ -461,6 +466,7 @@ test("published run with PR URL follows idempotent publish reconciliation", asyn
         "commit",
         "checkRemoteBranchCommit",
         "pushBranch",
+        "writeBeforeHead",
         "listOpenPullRequests",
         "createPullRequest",
         "writePullRequest",
@@ -508,6 +514,7 @@ test("published run with PR URL follows idempotent publish reconciliation", asyn
         unknown
       >;
       assert.equal(persistedRun.status, "published");
+      assert.equal(persistedRun.beforeHead, "commit123");
       assert.equal(
         persistedRun.pullRequestURL,
         "https://github.com/owner/name/pull/70"
@@ -704,6 +711,7 @@ test("release publish workflow reuses an existing local release commit", async (
           events.push(`updateRunStatus:${input.status}`);
           return updateRunStatus(input);
         },
+        writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
         writePullRequestRunArtifact: async (input) => {
           events.push("writePullRequest");
           return writePullRequestRunArtifact(input);
@@ -718,6 +726,7 @@ test("release publish workflow reuses an existing local release commit", async (
       "getHead",
       "checkRemoteBranchCommit",
       "pushBranch",
+      "writeBeforeHead",
       "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
@@ -727,6 +736,12 @@ test("release publish workflow reuses an existing local release commit", async (
     assert.deepEqual(gitClient.commitInputs, []);
     assert.equal(result.ok && result.value.commit?.commitSha, "commit123");
     assert.equal(result.ok && result.value.commit?.reused, true);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.beforeHead, "commit123");
   });
 });
 
@@ -756,6 +771,7 @@ test("release publish workflow skips push when the remote branch already has the
           events.push(`updateRunStatus:${input.status}`);
           return updateRunStatus(input);
         },
+        writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
         writePullRequestRunArtifact: async (input) => {
           events.push("writePullRequest");
           return writePullRequestRunArtifact(input);
@@ -774,11 +790,18 @@ test("release publish workflow skips push when the remote branch already has the
       "stageFiles",
       "commit",
       "checkRemoteBranchCommit",
+      "writeBeforeHead",
       "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
       "updateRunStatus:published"
     ]);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.beforeHead, "commit123");
   });
 });
 
@@ -829,6 +852,7 @@ test("release publish workflow reuses exactly one matching open pull request", a
       string,
       unknown
     >;
+    assert.equal(persistedRun.beforeHead, "commit123");
     assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/71");
   });
 });
@@ -888,6 +912,7 @@ test("multiple matching open pull requests fail before PR creation", async () =>
       unknown
     >;
     assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.beforeHead, "commit123");
     assert.equal(persistedRun.pullRequestURL, undefined);
   });
 });
@@ -1036,6 +1061,11 @@ test("staging, commit, push, and PR failures skip cleanup", async () => {
         unknown
       >;
       assert.equal(persistedRun.status, "publishing", publishCase.name);
+      assert.equal(
+        persistedRun.beforeHead,
+        publishCase.expectedStage === "pr_creation" ? "commit123" : run.beforeHead,
+        publishCase.name
+      );
       assert.equal(persistedRun.pullRequestURL, undefined, publishCase.name);
     });
   }
@@ -1055,6 +1085,7 @@ test("PR URL write failure returns artifact_write without cleanup", async () => 
           events.push(`updateRunStatus:${input.status}`);
           return updateRunStatus(input);
         },
+        writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
         writePullRequestRunArtifact: async () => {
           events.push("writePullRequest");
           throw new Error("cannot persist PR URL");
@@ -1073,6 +1104,7 @@ test("PR URL write failure returns artifact_write without cleanup", async () => 
       "commit",
       "checkRemoteBranchCommit",
       "pushBranch",
+      "writeBeforeHead",
       "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest"
@@ -1084,6 +1116,111 @@ test("PR URL write failure returns artifact_write without cleanup", async () => 
       unknown
     >;
     assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.beforeHead, "commit123");
+    assert.equal(persistedRun.pullRequestURL, undefined);
+  });
+});
+
+test("beforeHead refresh failure returns artifact_write before PR reconciliation", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events);
+    const githubClient = new FakeGitHubClient(events);
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient,
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        },
+        writeBeforeHeadRunArtifact: async () => {
+          events.push("writeBeforeHead");
+          throw new Error("cannot refresh beforeHead");
+        },
+        writePullRequestRunArtifact: async (input) => {
+          events.push("writePullRequest");
+          return writePullRequestRunArtifact(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.error.stage, "artifact_write");
+    assert.match(result.ok ? "" : result.error.message, /cannot refresh beforeHead/);
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "getHead",
+      "stageFiles",
+      "commit",
+      "checkRemoteBranchCommit",
+      "pushBranch",
+      "writeBeforeHead"
+    ]);
+    assert.deepEqual(githubClient.listOpenPullRequestsInputs, []);
+    assert.deepEqual(githubClient.createPullRequestInputs, []);
+    assert.deepEqual(gitClient.cleanupWorktreeInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.beforeHead, run.beforeHead);
+    assert.equal(persistedRun.pullRequestURL, undefined);
+  });
+});
+
+test("blank release commit SHA fails before beforeHead mutation or PR reconciliation", async () => {
+  await withReleaseArtifacts(async (_root, releasePath, runPath) => {
+    const events: string[] = [];
+    const gitClient = new FakeGitClient(events, {
+      commit: {
+        ok: true,
+        value: {
+          targetWorktreePath: callerWorktreePath,
+          commitSha: " "
+        }
+      }
+    });
+    const githubClient = new FakeGitHubClient(events);
+
+    const result = await runReleasePublishWorkflow(
+      { ...options, releasePath, runPath },
+      {
+        gitClient,
+        githubClient,
+        updateRunStatus: async (input) => {
+          events.push(`updateRunStatus:${input.status}`);
+          return updateRunStatus(input);
+        }
+      }
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.error.stage, "artifact_write");
+    assert.match(result.ok ? "" : result.error.message, /beforeHead/);
+    assert.deepEqual(events, [
+      "updateRunStatus:publishing",
+      "getChangedFiles",
+      "getHead",
+      "stageFiles",
+      "commit",
+      "checkRemoteBranchCommit",
+      "pushBranch"
+    ]);
+    assert.deepEqual(githubClient.listOpenPullRequestsInputs, []);
+    assert.deepEqual(githubClient.createPullRequestInputs, []);
+
+    const persistedRun = JSON.parse(await readFile(runPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.beforeHead, run.beforeHead);
     assert.equal(persistedRun.pullRequestURL, undefined);
   });
 });
@@ -1105,6 +1242,7 @@ test("published status write failure returns artifact_write without cleanup", as
           }
           return updateRunStatus(input);
         },
+        writeBeforeHeadRunArtifact: recordBeforeHeadWrite(events),
         writePullRequestRunArtifact: async (input) => {
           events.push("writePullRequest");
           return writePullRequestRunArtifact(input);
@@ -1123,6 +1261,7 @@ test("published status write failure returns artifact_write without cleanup", as
       "commit",
       "checkRemoteBranchCommit",
       "pushBranch",
+      "writeBeforeHead",
       "listOpenPullRequests",
       "createPullRequest",
       "writePullRequest",
@@ -1135,6 +1274,7 @@ test("published status write failure returns artifact_write without cleanup", as
       unknown
     >;
     assert.equal(persistedRun.status, "publishing");
+    assert.equal(persistedRun.beforeHead, "commit123");
     assert.equal(persistedRun.pullRequestURL, "https://github.com/owner/name/pull/70");
   });
 });
@@ -1188,5 +1328,12 @@ function githubError(message: string): GitHubAutomationError {
   return {
     code: "unknown",
     message
+  };
+}
+
+function recordBeforeHeadWrite(events: string[]) {
+  return async (input: Parameters<typeof writeBeforeHeadRunArtifact>[0]) => {
+    events.push("writeBeforeHead");
+    return writeBeforeHeadRunArtifact(input);
   };
 }

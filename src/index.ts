@@ -28,6 +28,7 @@ export {
 export {
   loadReleaseRunArtifact,
   updateRunStatus,
+  writeBeforeHeadRunArtifact,
   writePullRequestRunArtifact
 } from "./workflow/release/artifact-writer.js";
 export {
@@ -143,6 +144,7 @@ export type {
   WriteVerificationArtifactResult
 } from "./workflow/implement/artifact-writer.js";
 export type {
+  BeforeHeadRunInput,
   PullRequestRunInput,
   ReleaseRunArtifactResult,
   RunPathInput,

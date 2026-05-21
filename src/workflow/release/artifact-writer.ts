@@ -12,6 +12,10 @@ export interface PullRequestRunInput extends RunPathInput {
   pullRequestURL: string;
 }
 
+export interface BeforeHeadRunInput extends RunPathInput {
+  beforeHead: string;
+}
+
 export interface ReleaseRunArtifactResult {
   runPath: string;
   run: Record<string, unknown>;
@@ -82,12 +86,42 @@ export async function writePullRequestRunArtifact(
   };
 }
 
+export async function writeBeforeHeadRunArtifact(
+  input: BeforeHeadRunInput
+): Promise<ReleaseRunArtifactResult> {
+  const existingRun = await loadReleaseRunArtifact(input);
+  validateBeforeHead(input.beforeHead, input.runPath);
+
+  const run = {
+    ...existingRun,
+    beforeHead: input.beforeHead
+  };
+
+  await writeFile(input.runPath, formatJson(run), "utf8");
+
+  return {
+    runPath: input.runPath,
+    run
+  };
+}
+
 function validatePullRequestURL(pullRequestURL: string, runPath: string): void {
   if (typeof pullRequestURL !== "string" || pullRequestURL.trim() === "") {
     throw new Error(
       [
         `Release run artifact at ${runPath} cannot be marked published.`,
         "Release run field pullRequestURL must be a non-empty string."
+      ].join("\n")
+    );
+  }
+}
+
+function validateBeforeHead(beforeHead: string, runPath: string): void {
+  if (typeof beforeHead !== "string" || beforeHead.trim() === "") {
+    throw new Error(
+      [
+        `Release run artifact at ${runPath} cannot refresh beforeHead.`,
+        "Release run field beforeHead must be a non-empty string."
       ].join("\n")
     );
   }
