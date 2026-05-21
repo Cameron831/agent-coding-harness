@@ -5,7 +5,11 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const PARENT_PATH = loadEvalParentPath();
+export interface ParsedEvalEnv {
+  evalParentPath?: string;
+}
+
+export const parsedEvalEnv = loadEvalEnv();
 
 export interface EvalCaseMetadata {
   id: string;
@@ -23,7 +27,7 @@ export interface EvalRunContext {
 }
 
 export interface EvalWorkspaceSetupSuccess {
-  workspacePath: string;
+  targetWorktreePath: string;
 }
 
 export type EvalWorkspaceSetupResult =
@@ -37,7 +41,7 @@ export type EvalWorkspaceSetupResult =
     };
 
 export interface EvalAgentOrchestrationInput extends EvalRunContext {
-  workspacePath: string;
+  targetWorktreePath: string;
 }
 
 export type EvalAgentOrchestrationResult =
@@ -104,6 +108,8 @@ export interface EvalRunSummary {
   startedAt?: string;
   outputsPath?: string;
   status: "success" | "failed";
+  gradingStatus?: string;
+  gradingReason?: string;
   failureReason?: string;
 }
 
@@ -190,7 +196,7 @@ export async function runEvalCase(
 
   const agentInput: EvalAgentOrchestrationInput = {
     ...context,
-    workspacePath: workspace.value.workspacePath
+    targetWorktreePath: workspace.value.targetWorktreePath
   };
 
   let agentResult;
@@ -218,23 +224,13 @@ export async function runEvalCase(
     stdout(failureSummary(summaryBase, "Grading failed", gradingResult.reason));
     return 1;
   }
-  if (gradingResult.value.status !== "success") {
-    stdout(
-      formatEvalRunSummary({
-        ...summaryBase,
-        status: "failed",
-        failureReason:
-          gradingResult.value.reason ??
-          `Grading reported non-success status: ${gradingResult.value.status}.`
-      })
-    );
-    return 1;
-  }
 
   stdout(
     formatEvalRunSummary({
       ...summaryBase,
-      status: "success"
+      status: "success",
+      gradingStatus: gradingResult.value.status,
+      gradingReason: gradingResult.value.reason
     })
   );
   return 0;
@@ -251,7 +247,13 @@ export function formatEvalRunSummary(summary: EvalRunSummary): string {
     ...(summary.runID !== undefined ? [`Run ID: ${summary.runID}`] : []),
     ...(summary.startedAt !== undefined ? [`Started: ${summary.startedAt}`] : []),
     ...(summary.outputsPath !== undefined ? [`Outputs: ${summary.outputsPath}`] : []),
-    `Status: ${summary.status}`
+    `Status: ${summary.status}`,
+    ...(summary.gradingStatus !== undefined
+      ? [`Grading: ${summary.gradingStatus}`]
+      : []),
+    ...(summary.gradingReason !== undefined
+      ? [`Grading reason: ${summary.gradingReason}`]
+      : [])
   ];
 
   if (summary.failureReason !== undefined) {
@@ -353,7 +355,7 @@ async function defaultEvalWorkspaceSetup(
   return {
     ok: true,
     value: {
-      workspacePath: context.outputsPath
+      targetWorktreePath: context.outputsPath
     }
   };
 }
@@ -391,18 +393,23 @@ function messageFromUnknown(value: unknown): string {
   return value instanceof Error ? value.message : String(value);
 }
 
-function loadEvalParentPath(): string | undefined {
+function loadEvalEnv(): ParsedEvalEnv {
   let contents: string;
   try {
     contents = readFileSync(join(process.cwd(), ".env"), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
+      return {};
     }
     throw error;
   }
 
-  return parseEvalEnv(contents).PARENT_PATH;
+  const values = parseEvalEnv(contents);
+  return {
+    ...(values.EVAL_PARENT_PATH !== undefined
+      ? { evalParentPath: values.EVAL_PARENT_PATH }
+      : {})
+  };
 }
 
 function parseEvalEnv(contents: string): Record<string, string> {

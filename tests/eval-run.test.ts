@@ -37,7 +37,7 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
         return {
           ok: true,
           value: {
-            workspacePath: join(repositoryRoot, "target-worktree")
+            targetWorktreePath: join(repositoryRoot, "target-worktree")
           }
         };
       },
@@ -68,8 +68,14 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
       outputsPath: expectedOutputsPath,
       promptPath: expectedPromptPath
     });
-    assert.equal(agentInput?.workspacePath, join(repositoryRoot, "target-worktree"));
-    assert.equal(gradingInput?.workspacePath, join(repositoryRoot, "target-worktree"));
+    assert.equal(
+      agentInput?.targetWorktreePath,
+      join(repositoryRoot, "target-worktree")
+    );
+    assert.equal(
+      gradingInput?.targetWorktreePath,
+      join(repositoryRoot, "target-worktree")
+    );
     assert.equal(agentInput?.outputsPath, expectedOutputsPath);
     assert.equal(stdout.length, 1);
     assert.match(stdout[0], /Eval run summary/);
@@ -92,7 +98,7 @@ test("eval runner rejects missing input before invoking placeholders", async () 
       return {
         ok: true,
         value: {
-          workspacePath: "unused"
+          targetWorktreePath: "unused"
         }
       };
     }
@@ -197,7 +203,7 @@ test("eval runner rejects invalid case metadata", async () => {
           return {
             ok: true,
             value: {
-              workspacePath: "unused"
+              targetWorktreePath: "unused"
             }
           };
         }
@@ -265,7 +271,7 @@ test("eval runner short-circuits after agent orchestration failure", async () =>
         return {
           ok: true,
           value: {
-            workspacePath: "target-worktree"
+            targetWorktreePath: "target-worktree"
           }
         };
       },
@@ -305,7 +311,7 @@ test("eval runner returns failure when grading execution fails", async () => {
       setupWorkspace: async () => ({
         ok: true,
         value: {
-          workspacePath: "target-worktree"
+          targetWorktreePath: "target-worktree"
         }
       }),
       runAgent: async () => ({ ok: true }),
@@ -320,7 +326,7 @@ test("eval runner returns failure when grading execution fails", async () => {
   });
 });
 
-test("eval runner maps non-success grading status to failure", async () => {
+test("eval runner reports non-success grading status without failing the run", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
     await writeEvalCase(repositoryRoot, caseID, validCase());
     const stdout: string[] = [];
@@ -332,7 +338,7 @@ test("eval runner maps non-success grading status to failure", async () => {
       setupWorkspace: async () => ({
         ok: true,
         value: {
-          workspacePath: "target-worktree"
+          targetWorktreePath: "target-worktree"
         }
       }),
       runAgent: async () => ({ ok: true }),
@@ -345,9 +351,11 @@ test("eval runner maps non-success grading status to failure", async () => {
       })
     });
 
-    assert.equal(exitCode, 1);
+    assert.equal(exitCode, 0);
     assert.match(stdout.join("\n"), /changed files outside allowlist/);
-    assert.match(stdout.join("\n"), /Status: failed/);
+    assert.match(stdout.join("\n"), /Status: success/);
+    assert.match(stdout.join("\n"), /Grading: failed/);
+    assert.doesNotMatch(stdout.join("\n"), /Failure:/);
   });
 });
 
