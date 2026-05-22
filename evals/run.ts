@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  setupEvalWorkspace,
+  type EvalWorkspaceDependencies
+} from "./workspace.js";
 
 export interface ParsedEvalEnv {
   evalParentPath?: string;
@@ -95,6 +99,8 @@ type EvalCaseLoadResult =
 
 export interface EvalRunDependencies {
   repositoryRoot?: string;
+  evalParentPath?: string;
+  workspaceDependencies?: EvalWorkspaceDependencies;
   clock?: EvalRunClock;
   stdout?: EvalRunOutput;
   setupWorkspace?: EvalWorkspaceSetup;
@@ -178,7 +184,15 @@ export async function runEvalCase(
     return 1;
   }
 
-  const setupWorkspace = dependencies.setupWorkspace ?? defaultEvalWorkspaceSetup;
+  const setupWorkspace =
+    dependencies.setupWorkspace ??
+    ((setupContext) =>
+      defaultEvalWorkspaceSetup(setupContext, {
+        repositoryRoot,
+        evalParentPath:
+          dependencies.evalParentPath ?? parsedEvalEnv.evalParentPath,
+        workspaceDependencies: dependencies.workspaceDependencies
+      }));
   const runAgent = dependencies.runAgent ?? defaultEvalAgentOrchestration;
   const grade = dependencies.grade ?? defaultEvalGrading;
 
@@ -350,12 +364,34 @@ function validateEvalCaseMetadata(
 }
 
 async function defaultEvalWorkspaceSetup(
-  context: EvalRunContext
+  context: EvalRunContext,
+  options: {
+    repositoryRoot: string;
+    evalParentPath?: string;
+    workspaceDependencies?: EvalWorkspaceDependencies;
+  }
 ): Promise<EvalWorkspaceSetupResult> {
+  if (options.evalParentPath === undefined) {
+    return {
+      ok: false,
+      reason: "evalParentPath is required for default eval workspace setup."
+    };
+  }
+
+  const workspace = await setupEvalWorkspace(
+    {
+      caseID: context.caseID,
+      runID: context.runID,
+      evalParentPath: options.evalParentPath,
+      repositoryRoot: options.repositoryRoot
+    },
+    options.workspaceDependencies
+  );
+
   return {
     ok: true,
     value: {
-      targetWorktreePath: context.outputsPath
+      targetWorktreePath: workspace.tempPath
     }
   };
 }
