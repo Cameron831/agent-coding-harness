@@ -4,7 +4,11 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { gradeEvalRun } from "./grade.js";
+import {
+  gradeEvalRun,
+  type EvalGradeDependencies,
+  type EvalGradeStatus
+} from "./grade.js";
 import {
   setupEvalWorkspace,
   type EvalWorkspaceDependencies
@@ -56,13 +60,13 @@ export interface EvalAgentOrchestrationInput extends EvalRunContext {
 }
 
 export interface EvalAgentOrchestrationSuccess {
-  release?: unknown;
+  release: unknown;
 }
 
 export type EvalAgentOrchestrationResult =
   | {
       ok: true;
-      value?: EvalAgentOrchestrationSuccess;
+      value: EvalAgentOrchestrationSuccess;
     }
   | {
       ok: false;
@@ -70,7 +74,7 @@ export type EvalAgentOrchestrationResult =
     };
 
 export interface EvalGradingSuccess {
-  status: string;
+  status: EvalGradeStatus;
   reason?: string;
 }
 
@@ -96,8 +100,13 @@ export type EvalImplementAgentOrchestration = (
   input: ImplementWorkflowOptions
 ) => Promise<ImplementWorkflowResult>;
 
+export interface EvalGradingInput extends EvalRunContext {
+  release: unknown;
+  tempPath: string;
+}
+
 export type EvalGrading = (
-  input: EvalAgentOrchestrationInput
+  input: EvalGradingInput
 ) => Promise<EvalGradingResult>;
 
 export type EvalRunClock = () => Date;
@@ -123,6 +132,7 @@ export interface EvalRunDependencies {
   runAgent?: EvalAgentOrchestration;
   runImplementAgent?: EvalImplementAgentOrchestration;
   grade?: EvalGrading;
+  gradeDependencies?: EvalGradeDependencies;
 }
 
 export interface EvalRunSummary {
@@ -131,7 +141,7 @@ export interface EvalRunSummary {
   startedAt?: string;
   outputsPath?: string;
   status: "success" | "failed";
-  gradingStatus?: string;
+  gradingStatus?: EvalGradeStatus;
   gradingReason?: string;
   failureReason?: string;
 }
@@ -250,16 +260,22 @@ export async function runEvalCase(
     return 1;
   }
 
+  const gradingInput: EvalGradingInput = {
+    ...context,
+    release: agentResult.value.release,
+    tempPath: workspace.value.targetWorktreePath
+  };
+
   let gradingResult;
   try {
     gradingResult =
       grade === undefined
         ? await defaultEvalGrading(
-            agentInput,
-            agentResult.value?.release,
-            repositoryRoot
+            gradingInput,
+            repositoryRoot,
+            dependencies.gradeDependencies
           )
-        : await grade(agentInput);
+        : await grade(gradingInput);
   } catch (cause) {
     stdout(failureSummary(summaryBase, "Grading failed", cause));
     return 1;
@@ -450,21 +466,24 @@ export async function defaultEvalAgentOrchestration(
   };
 }
 
-async function defaultEvalGrading(
-  input: EvalAgentOrchestrationInput,
-  release: unknown,
-  repositoryRoot: string
+export async function defaultEvalGrading(
+  input: EvalGradingInput,
+  repositoryRoot: string,
+  gradeDependencies: EvalGradeDependencies = {}
 ): Promise<EvalGradingResult> {
-  const result = await gradeEvalRun({
-    caseID: input.caseID,
-    runID: input.runID,
-    startedAt: input.startedAt,
-    case: input.case,
-    release,
-    promptPath: resolveRepositoryPath(repositoryRoot, input.promptPath),
-    tempPath: input.targetWorktreePath,
-    outputsPath: resolveRepositoryPath(repositoryRoot, input.outputsPath)
-  });
+  const result = await gradeEvalRun(
+    {
+      caseID: input.caseID,
+      runID: input.runID,
+      startedAt: input.startedAt,
+      case: input.case,
+      release: input.release,
+      promptPath: resolveRepositoryPath(repositoryRoot, input.promptPath),
+      tempPath: input.tempPath,
+      outputsPath: resolveRepositoryPath(repositoryRoot, input.outputsPath)
+    },
+    gradeDependencies
+  );
 
   return {
     ok: true,

@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,8 +15,19 @@ import {
   parsedEvalEnv,
   runEvalCase,
   type EvalAgentOrchestrationInput,
+  type EvalGradingInput,
   type EvalRunContext
 } from "../evals/run.js";
+import type {
+  EvalGradeClock,
+  EvalGradeCommandInput,
+  EvalGradeCommandResult,
+  EvalGradeCommandRunner,
+  EvalGradeGitChangedFilesResult,
+  EvalGradeGitDiffResult,
+  EvalGradeGitInput,
+  EvalGradeGitReader
+} from "../evals/grade.js";
 import type {
   ImplementorReleaseMetadata,
   ImplementWorkflowOptions,
@@ -44,7 +62,7 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
     const expectedPromptPath = join("evals", caseID, "prompt.md");
     let workspaceContext: EvalRunContext | undefined;
     let agentInput: EvalAgentOrchestrationInput | undefined;
-    let gradingInput: EvalAgentOrchestrationInput | undefined;
+    let gradingInput: EvalGradingInput | undefined;
 
     const exitCode = await runEvalCase(caseID, {
       repositoryRoot,
@@ -64,7 +82,7 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
       runAgent: async (input) => {
         events.push("agent");
         agentInput = input;
-        return { ok: true };
+        return evalAgentSuccess();
       },
       grade: async (input) => {
         events.push("grading");
@@ -72,7 +90,7 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -92,10 +110,8 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
       agentInput?.targetWorktreePath,
       join(repositoryRoot, "target-worktree")
     );
-    assert.equal(
-      gradingInput?.targetWorktreePath,
-      join(repositoryRoot, "target-worktree")
-    );
+    assert.equal(gradingInput?.tempPath, join(repositoryRoot, "target-worktree"));
+    assert.deepEqual(gradingInput?.release, releaseMetadata);
     assert.equal(agentInput?.outputsPath, expectedOutputsPath);
     assert.equal(stdout.length, 1);
     assert.match(stdout[0], /Eval run summary/);
@@ -103,6 +119,7 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
     assert.match(stdout[0], new RegExp(`Run ID: ${runID}`));
     assert.match(stdout[0], new RegExp(`Started: ${startedAt}`));
     assert.match(stdout[0], /Status: success/);
+    assert.match(stdout[0], /Grading: pass/);
     assert.doesNotMatch(stdout[0], /Failure:/);
   });
 });
@@ -147,14 +164,17 @@ test("default eval agent adapter invokes implement agent with prompt and target 
   });
 });
 
-test("eval runner default agent adapter leaves grading input unchanged", async () => {
+test("eval runner default agent adapter propagates release to grading input", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
     await writeEvalCase(repositoryRoot, caseID, validCase());
     const stdout: string[] = [];
     const targetWorktreePath = join(repositoryRoot, "target-worktree");
     const expectedPromptPath = join("evals", caseID, "prompt.md");
     const implementInputs: ImplementWorkflowOptions[] = [];
-    let gradingInput: EvalAgentOrchestrationInput | undefined;
+    let gradingInput: EvalGradingInput | undefined;
+    const release = {
+      evalRunnerShouldNotValidateReleaseShape: true
+    };
 
     const exitCode = await runEvalCase(caseID, {
       repositoryRoot,
@@ -171,9 +191,7 @@ test("eval runner default agent adapter leaves grading input unchanged", async (
         return {
           ok: true,
           value: {
-            release: {
-              evalRunnerShouldNotValidateReleaseShape: true
-            }
+            release
           }
         } as unknown as ImplementWorkflowResult;
       },
@@ -182,7 +200,7 @@ test("eval runner default agent adapter leaves grading input unchanged", async (
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -201,12 +219,96 @@ test("eval runner default agent adapter leaves grading input unchanged", async (
       "caseID",
       "outputsPath",
       "promptPath",
+      "release",
       "runID",
       "startedAt",
-      "targetWorktreePath"
+      "tempPath"
     ]);
-    assert.equal("release" in gradingInput, false);
+    assert.deepEqual(gradingInput.release, release);
+    assert.equal(gradingInput.tempPath, targetWorktreePath);
     assert.match(stdout.join("\n"), /Status: success/);
+  });
+});
+
+test("eval runner default grading uses loaded case, release, and temp path", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    const stdout: string[] = [];
+    const tempPath = join(repositoryRoot, "target-worktree");
+    const outputsPath = join(repositoryRoot, "evals", caseID, "outputs", runID);
+    const gitClient = new RecordingEvalGradeGitReader(
+      { ok: true, value: { diff: "diff --git a/src/git/git-client.ts\n" } },
+      { ok: true, value: { files: ["src/git/git-client.ts"] } }
+    );
+    const commandRunner = new RecordingEvalGradeCommandRunner({
+      command: "ignored",
+      exitCode: 0,
+      output: "ok\n"
+    });
+
+    await mkdir(tempPath, { recursive: true });
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      clock: () => fixedDate,
+      stdout: (message) => stdout.push(message),
+      setupWorkspace: async () => ({
+        ok: true,
+        value: {
+          targetWorktreePath: tempPath
+        }
+      }),
+      runAgent: async () => {
+        await writeEvalCase(repositoryRoot, caseID, {
+          id: caseID,
+          testCommand: "npm run mutated",
+          allowedChangedFiles: []
+        });
+        return evalAgentSuccess();
+      },
+      gradeDependencies: {
+        gitClient,
+        commandRunner,
+        clock: new FixedEvalGradeClock("2026-05-20T21:30:09.005Z")
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(gitClient.diffInputs, [{ targetWorktreePath: tempPath }]);
+    assert.deepEqual(gitClient.changedFilesInputs, [
+      { targetWorktreePath: tempPath }
+    ]);
+    assert.deepEqual(commandRunner.inputs, [
+      {
+        command: "npm ci && npm test",
+        cwd: tempPath
+      }
+    ]);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(outputsPath, "release.json"), "utf8")),
+      releaseMetadata
+    );
+    assert.deepEqual(
+      JSON.parse(await readFile(join(outputsPath, "report.json"), "utf8")),
+      {
+        caseId: caseID,
+        runId: runID,
+        status: "pass",
+        startedAt,
+        finishedAt: "2026-05-20T21:30:09.005Z",
+        checks: [
+          { name: "non-empty-diff", status: "pass" },
+          { name: "allowed-changed-files", status: "pass" },
+          { name: "tests", status: "pass" }
+        ],
+        changedFiles: ["src/git/git-client.ts"],
+        testCommand: "npm test",
+        allowedChangedFiles: ["src/git/git-client.ts"]
+      }
+    );
+    assert.match(stdout.join("\n"), /Status: success/);
+    assert.match(stdout.join("\n"), /Grading: pass/);
+    assert.doesNotMatch(stdout.join("\n"), /Failure:/);
   });
 });
 
@@ -244,7 +346,7 @@ test("eval runner maps default implement agent failures and skips grading", asyn
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -278,7 +380,7 @@ test("eval runner injected runAgent bypasses default implement adapter", async (
       },
       runAgent: async () => {
         events.push("agent");
-        return { ok: true };
+        return evalAgentSuccess();
       },
       runImplementAgent: async () => {
         throw new Error("default implement adapter should not run");
@@ -288,7 +390,7 @@ test("eval runner injected runAgent bypasses default implement adapter", async (
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -317,12 +419,12 @@ test("eval runner default setup uses eval parent path as target worktree", async
       stdout: (message) => stdout.push(message),
       runAgent: async (input) => {
         agentInput = input;
-        return { ok: true };
+        return evalAgentSuccess();
       },
       grade: async () => ({
         ok: true,
         value: {
-          status: "success"
+          status: "pass"
         }
       })
     });
@@ -355,7 +457,7 @@ test("eval runner default setup fails when eval parent path is missing", async (
         stdout: (message) => stdout.push(message),
         runAgent: async () => {
           agentInvoked = true;
-          return { ok: true };
+          return evalAgentSuccess();
         }
       });
 
@@ -392,7 +494,7 @@ test("eval runner reports default workspace setup git failures", async () => {
       stdout: (message) => stdout.push(message),
       runAgent: async () => {
         agentInvoked = true;
-        return { ok: true };
+        return evalAgentSuccess();
       }
     });
 
@@ -553,14 +655,14 @@ test("eval runner short-circuits after workspace setup failure", async () => {
       },
       runAgent: async () => {
         events.push("agent");
-        return { ok: true };
+        return evalAgentSuccess();
       },
       grade: async () => {
         events.push("grading");
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -603,7 +705,7 @@ test("eval runner short-circuits after agent orchestration failure", async () =>
         return {
           ok: true,
           value: {
-            status: "success"
+            status: "pass"
           }
         };
       }
@@ -630,7 +732,7 @@ test("eval runner returns failure when grading execution fails", async () => {
           targetWorktreePath: "target-worktree"
         }
       }),
-      runAgent: async () => ({ ok: true }),
+      runAgent: async () => evalAgentSuccess(),
       grade: async () => {
         throw new Error("grader crashed");
       }
@@ -642,7 +744,7 @@ test("eval runner returns failure when grading execution fails", async () => {
   });
 });
 
-test("eval runner reports non-success grading status without failing the run", async () => {
+test("eval runner reports fail grading status without failing the run", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
     await writeEvalCase(repositoryRoot, caseID, validCase());
     const stdout: string[] = [];
@@ -657,11 +759,11 @@ test("eval runner reports non-success grading status without failing the run", a
           targetWorktreePath: "target-worktree"
         }
       }),
-      runAgent: async () => ({ ok: true }),
+      runAgent: async () => evalAgentSuccess(),
       grade: async () => ({
         ok: true,
         value: {
-          status: "failed",
+          status: "fail",
           reason: "changed files outside allowlist"
         }
       })
@@ -670,7 +772,7 @@ test("eval runner reports non-success grading status without failing the run", a
     assert.equal(exitCode, 0);
     assert.match(stdout.join("\n"), /changed files outside allowlist/);
     assert.match(stdout.join("\n"), /Status: success/);
-    assert.match(stdout.join("\n"), /Grading: failed/);
+    assert.match(stdout.join("\n"), /Grading: fail/);
     assert.doesNotMatch(stdout.join("\n"), /Failure:/);
   });
 });
@@ -680,6 +782,15 @@ function validCase() {
     id: caseID,
     testCommand: "npm test",
     allowedChangedFiles: ["src/git/git-client.ts"]
+  };
+}
+
+function evalAgentSuccess(release: unknown = releaseMetadata) {
+  return {
+    ok: true as const,
+    value: {
+      release
+    }
   };
 }
 
@@ -718,6 +829,47 @@ class RecordingEvalWorkspaceGitRunner implements EvalWorkspaceGitRunner {
     };
     this.commands.push(recorded);
     await this.onRun(recorded);
+  }
+}
+
+class RecordingEvalGradeGitReader implements EvalGradeGitReader {
+  readonly diffInputs: EvalGradeGitInput[] = [];
+  readonly changedFilesInputs: EvalGradeGitInput[] = [];
+
+  constructor(
+    private readonly diffResult: EvalGradeGitDiffResult,
+    private readonly changedFilesResult: EvalGradeGitChangedFilesResult
+  ) {}
+
+  async getDiff(input: EvalGradeGitInput): Promise<EvalGradeGitDiffResult> {
+    this.diffInputs.push(input);
+    return this.diffResult;
+  }
+
+  async getChangedFiles(
+    input: EvalGradeGitInput
+  ): Promise<EvalGradeGitChangedFilesResult> {
+    this.changedFilesInputs.push(input);
+    return this.changedFilesResult;
+  }
+}
+
+class RecordingEvalGradeCommandRunner implements EvalGradeCommandRunner {
+  readonly inputs: EvalGradeCommandInput[] = [];
+
+  constructor(private readonly result: EvalGradeCommandResult) {}
+
+  async run(input: EvalGradeCommandInput): Promise<EvalGradeCommandResult> {
+    this.inputs.push(input);
+    return this.result;
+  }
+}
+
+class FixedEvalGradeClock implements EvalGradeClock {
+  constructor(private readonly timestamp: string) {}
+
+  now(): Date {
+    return new Date(this.timestamp);
   }
 }
 
