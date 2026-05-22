@@ -2,8 +2,9 @@
 
 import { readFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gradeEvalRun } from "./grade.js";
 import {
   setupEvalWorkspace,
   type EvalWorkspaceDependencies
@@ -216,7 +217,7 @@ export async function runEvalCase(
         input,
         dependencies.runImplementAgent ?? runImplementWorkflow
       ));
-  const grade = dependencies.grade ?? defaultEvalGrading;
+  const grade = dependencies.grade;
 
   let workspace;
   try {
@@ -251,7 +252,14 @@ export async function runEvalCase(
 
   let gradingResult;
   try {
-    gradingResult = await grade(agentInput);
+    gradingResult =
+      grade === undefined
+        ? await defaultEvalGrading(
+            agentInput,
+            agentResult.value?.release,
+            repositoryRoot
+          )
+        : await grade(agentInput);
   } catch (cause) {
     stdout(failureSummary(summaryBase, "Grading failed", cause));
     return 1;
@@ -442,13 +450,32 @@ export async function defaultEvalAgentOrchestration(
   };
 }
 
-async function defaultEvalGrading(): Promise<EvalGradingResult> {
+async function defaultEvalGrading(
+  input: EvalAgentOrchestrationInput,
+  release: unknown,
+  repositoryRoot: string
+): Promise<EvalGradingResult> {
+  const result = await gradeEvalRun({
+    caseID: input.caseID,
+    runID: input.runID,
+    startedAt: input.startedAt,
+    case: input.case,
+    release,
+    promptPath: resolveRepositoryPath(repositoryRoot, input.promptPath),
+    tempPath: input.targetWorktreePath,
+    outputsPath: resolveRepositoryPath(repositoryRoot, input.outputsPath)
+  });
+
   return {
     ok: true,
     value: {
-      status: "success"
+      status: result.status
     }
   };
+}
+
+function resolveRepositoryPath(repositoryRoot: string, targetPath: string): string {
+  return isAbsolute(targetPath) ? targetPath : join(repositoryRoot, targetPath);
 }
 
 function failureSummary(
