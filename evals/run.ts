@@ -371,29 +371,27 @@ async function defaultEvalWorkspaceSetup(
     workspaceDependencies?: EvalWorkspaceDependencies;
   }
 ): Promise<EvalWorkspaceSetupResult> {
-  if (options.evalParentPath !== undefined) {
-    const workspace = await setupEvalWorkspace(
-      {
-        caseID: context.caseID,
-        runID: context.runID,
-        evalParentPath: options.evalParentPath,
-        repositoryRoot: options.repositoryRoot
-      },
-      options.workspaceDependencies
-    );
-
+  if (options.evalParentPath === undefined) {
     return {
-      ok: true,
-      value: {
-        targetWorktreePath: workspace.tempPath
-      }
+      ok: false,
+      reason: "evalParentPath is required for default eval workspace setup."
     };
   }
+
+  const workspace = await setupEvalWorkspace(
+    {
+      caseID: context.caseID,
+      runID: context.runID,
+      evalParentPath: options.evalParentPath,
+      repositoryRoot: options.repositoryRoot
+    },
+    options.workspaceDependencies
+  );
 
   return {
     ok: true,
     value: {
-      targetWorktreePath: context.outputsPath
+      targetWorktreePath: workspace.tempPath
     }
   };
 }

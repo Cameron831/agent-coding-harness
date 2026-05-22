@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  parsedEvalEnv,
   runEvalCase,
   type EvalAgentOrchestrationInput,
   type EvalRunContext
@@ -129,6 +130,39 @@ test("eval runner default setup uses eval parent path as target worktree", async
       { cwd: expectedTempPath, args: ["commit", "-m", "fixture baseline"] }
     ]);
     assert.match(stdout.join("\n"), /Status: success/);
+  });
+});
+
+test("eval runner default setup fails when eval parent path is missing", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    const stdout: string[] = [];
+    let agentInvoked = false;
+    const previousEvalParentPath = parsedEvalEnv.evalParentPath;
+    delete parsedEvalEnv.evalParentPath;
+
+    try {
+      const exitCode = await runEvalCase(caseID, {
+        repositoryRoot,
+        clock: () => fixedDate,
+        stdout: (message) => stdout.push(message),
+        runAgent: async () => {
+          agentInvoked = true;
+          return { ok: true };
+        }
+      });
+
+      assert.equal(exitCode, 1);
+      assert.equal(agentInvoked, false);
+      assert.match(stdout.join("\n"), /Workspace setup failed/);
+      assert.match(stdout.join("\n"), /evalParentPath is required/);
+    } finally {
+      if (previousEvalParentPath === undefined) {
+        delete parsedEvalEnv.evalParentPath;
+      } else {
+        parsedEvalEnv.evalParentPath = previousEvalParentPath;
+      }
+    }
   });
 });
 
