@@ -8,7 +8,8 @@ import {
   parsedEvalEnv,
   runEvalCase,
   type EvalAgentOrchestrationInput,
-  type EvalRunContext
+  type EvalGradingInput,
+  type EvalWorkspaceSetupInput
 } from "../evals/run.js";
 import type {
   ImplementorReleaseMetadata,
@@ -42,18 +43,20 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
     const stdout: string[] = [];
     const expectedOutputsPath = join("evals", caseID, "outputs", runID);
     const expectedPromptPath = join("evals", caseID, "prompt.md");
-    let workspaceContext: EvalRunContext | undefined;
+    const expectedEvalParentPath = join(repositoryRoot, "eval-temp");
+    let workspaceInput: EvalWorkspaceSetupInput | undefined;
     let agentInput: EvalAgentOrchestrationInput | undefined;
-    let gradingInput: EvalAgentOrchestrationInput | undefined;
+    let gradingInput: EvalGradingInput | undefined;
 
     const exitCode = await runEvalCase(caseID, {
       repositoryRoot,
+      evalParentPath: expectedEvalParentPath,
       clock: () => fixedDate,
       stdout: (message) => stdout.push(message),
-      setupWorkspace: async (context) => {
+      setupWorkspace: async (input) => {
         events.push("workspace");
         await access(join(repositoryRoot, expectedOutputsPath));
-        workspaceContext = context;
+        workspaceInput = input;
         return {
           ok: true,
           value: {
@@ -80,13 +83,15 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
 
     assert.equal(exitCode, 0);
     assert.deepEqual(events, ["workspace", "agent", "grading"]);
-    assert.deepEqual(workspaceContext, {
+    assert.deepEqual(workspaceInput, {
       case: validCase(),
       caseID,
       runID,
       startedAt,
       outputsPath: expectedOutputsPath,
-      promptPath: expectedPromptPath
+      promptPath: expectedPromptPath,
+      repositoryRoot,
+      evalParentPath: expectedEvalParentPath
     });
     assert.equal(
       agentInput?.targetWorktreePath,
@@ -96,6 +101,9 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
       gradingInput?.targetWorktreePath,
       join(repositoryRoot, "target-worktree")
     );
+    assert.equal(gradingInput?.repositoryRoot, repositoryRoot);
+    assert.equal("release" in (gradingInput ?? {}), true);
+    assert.equal(gradingInput?.release, undefined);
     assert.equal(agentInput?.outputsPath, expectedOutputsPath);
     assert.equal(stdout.length, 1);
     assert.match(stdout[0], /Eval run summary/);
@@ -119,14 +127,17 @@ test("default eval agent adapter invokes implement agent with prompt and target 
   };
   const implementInputs: ImplementWorkflowOptions[] = [];
 
-  const result = await defaultEvalAgentOrchestration(input, async (implementInput) => {
-    implementInputs.push(implementInput);
-    return {
-      ok: true,
-      value: {
-        release: releaseMetadata
-      }
-    };
+  const result = await defaultEvalAgentOrchestration({
+    ...input,
+    runImplementAgent: async (implementInput) => {
+      implementInputs.push(implementInput);
+      return {
+        ok: true,
+        value: {
+          release: releaseMetadata
+        }
+      };
+    }
   });
 
   assert.deepEqual(implementInputs, [
@@ -147,14 +158,17 @@ test("default eval agent adapter invokes implement agent with prompt and target 
   });
 });
 
-test("eval runner default agent adapter leaves grading input unchanged", async () => {
+test("eval runner default agent adapter passes release to grading input", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
     await writeEvalCase(repositoryRoot, caseID, validCase());
     const stdout: string[] = [];
     const targetWorktreePath = join(repositoryRoot, "target-worktree");
     const expectedPromptPath = join("evals", caseID, "prompt.md");
     const implementInputs: ImplementWorkflowOptions[] = [];
-    let gradingInput: EvalAgentOrchestrationInput | undefined;
+    let gradingInput: EvalGradingInput | undefined;
+    const release = {
+      evalRunnerShouldNotValidateReleaseShape: true
+    };
 
     const exitCode = await runEvalCase(caseID, {
       repositoryRoot,
@@ -171,9 +185,7 @@ test("eval runner default agent adapter leaves grading input unchanged", async (
         return {
           ok: true,
           value: {
-            release: {
-              evalRunnerShouldNotValidateReleaseShape: true
-            }
+            release
           }
         } as unknown as ImplementWorkflowResult;
       },
@@ -201,11 +213,14 @@ test("eval runner default agent adapter leaves grading input unchanged", async (
       "caseID",
       "outputsPath",
       "promptPath",
+      "release",
+      "repositoryRoot",
       "runID",
       "startedAt",
       "targetWorktreePath"
     ]);
-    assert.equal("release" in gradingInput, false);
+    assert.equal(gradingInput.repositoryRoot, repositoryRoot);
+    assert.deepEqual(gradingInput.release, release);
     assert.match(stdout.join("\n"), /Status: success/);
   });
 });
