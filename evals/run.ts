@@ -8,6 +8,12 @@ import {
   setupEvalWorkspace,
   type EvalWorkspaceDependencies
 } from "./workspace.js";
+import {
+  runImplementWorkflow,
+  type ImplementWorkflowError,
+  type ImplementWorkflowOptions,
+  type ImplementWorkflowResult
+} from "../src/workflow/implement/agent-orchestrator.js";
 
 export interface ParsedEvalEnv {
   evalParentPath?: string;
@@ -48,9 +54,14 @@ export interface EvalAgentOrchestrationInput extends EvalRunContext {
   targetWorktreePath: string;
 }
 
+export interface EvalAgentOrchestrationSuccess {
+  release?: unknown;
+}
+
 export type EvalAgentOrchestrationResult =
   | {
       ok: true;
+      value?: EvalAgentOrchestrationSuccess;
     }
   | {
       ok: false;
@@ -80,6 +91,10 @@ export type EvalAgentOrchestration = (
   input: EvalAgentOrchestrationInput
 ) => Promise<EvalAgentOrchestrationResult>;
 
+export type EvalImplementAgentOrchestration = (
+  input: ImplementWorkflowOptions
+) => Promise<ImplementWorkflowResult>;
+
 export type EvalGrading = (
   input: EvalAgentOrchestrationInput
 ) => Promise<EvalGradingResult>;
@@ -105,6 +120,7 @@ export interface EvalRunDependencies {
   stdout?: EvalRunOutput;
   setupWorkspace?: EvalWorkspaceSetup;
   runAgent?: EvalAgentOrchestration;
+  runImplementAgent?: EvalImplementAgentOrchestration;
   grade?: EvalGrading;
 }
 
@@ -193,7 +209,13 @@ export async function runEvalCase(
           dependencies.evalParentPath ?? parsedEvalEnv.evalParentPath,
         workspaceDependencies: dependencies.workspaceDependencies
       }));
-  const runAgent = dependencies.runAgent ?? defaultEvalAgentOrchestration;
+  const runAgent =
+    dependencies.runAgent ??
+    ((input) =>
+      defaultEvalAgentOrchestration(
+        input,
+        dependencies.runImplementAgent ?? runImplementWorkflow
+      ));
   const grade = dependencies.grade ?? defaultEvalGrading;
 
   let workspace;
@@ -396,8 +418,28 @@ async function defaultEvalWorkspaceSetup(
   };
 }
 
-async function defaultEvalAgentOrchestration(): Promise<EvalAgentOrchestrationResult> {
-  return { ok: true };
+export async function defaultEvalAgentOrchestration(
+  input: EvalAgentOrchestrationInput,
+  runImplementAgent: EvalImplementAgentOrchestration = runImplementWorkflow
+): Promise<EvalAgentOrchestrationResult> {
+  const implementResult = await runImplementAgent({
+    promptPath: input.promptPath,
+    targetWorktreePath: input.targetWorktreePath
+  });
+
+  if (!implementResult.ok) {
+    return {
+      ok: false,
+      reason: formatImplementAgentFailure(implementResult.error)
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      release: implementResult.value.release
+    }
+  };
 }
 
 async function defaultEvalGrading(): Promise<EvalGradingResult> {
@@ -427,6 +469,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function messageFromUnknown(value: unknown): string {
   return value instanceof Error ? value.message : String(value);
+}
+
+function formatImplementAgentFailure(error: ImplementWorkflowError): string {
+  const validationDetails =
+    error.errors === undefined || error.errors.length === 0
+      ? ""
+      : ` Details: ${error.errors.map(formatReleaseValidationError).join("; ")}`;
+
+  return `Implement agent ${error.stage} failed: ${error.message}${validationDetails}`;
+}
+
+function formatReleaseValidationError(
+  error: NonNullable<ImplementWorkflowError["errors"]>[number]
+): string {
+  return error.field === undefined
+    ? error.message
+    : `${error.field}: ${error.message}`;
 }
 
 function loadEvalEnv(): ParsedEvalEnv {

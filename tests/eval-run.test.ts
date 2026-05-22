@@ -4,11 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  defaultEvalAgentOrchestration,
   parsedEvalEnv,
   runEvalCase,
   type EvalAgentOrchestrationInput,
   type EvalRunContext
 } from "../evals/run.js";
+import type {
+  ImplementorReleaseMetadata,
+  ImplementWorkflowOptions,
+  ImplementWorkflowResult
+} from "../src/index.js";
 import type {
   EvalWorkspaceGitCommand,
   EvalWorkspaceGitRunner
@@ -18,6 +24,15 @@ const caseID = "worktree-cleanup-idempotency";
 const fixedDate = new Date("2026-05-20T21:30:04.005Z");
 const startedAt = fixedDate.toISOString();
 const runID = "2026-05-20T21-30-04-005Z";
+const releaseMetadata: ImplementorReleaseMetadata = {
+  commit_message: "Wire eval implement agent",
+  pull_request: {
+    title: "Wire eval implement agent",
+    summary: "Uses the implement agent adapter for default eval runs.",
+    scope: ["Updated eval agent orchestration."],
+    verification: ["Not run"]
+  }
+};
 
 test("eval runner sequences placeholders with deterministic paths and summary output", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
@@ -89,6 +104,198 @@ test("eval runner sequences placeholders with deterministic paths and summary ou
     assert.match(stdout[0], new RegExp(`Started: ${startedAt}`));
     assert.match(stdout[0], /Status: success/);
     assert.doesNotMatch(stdout[0], /Failure:/);
+  });
+});
+
+test("default eval agent adapter invokes implement agent with prompt and target only", async () => {
+  const input: EvalAgentOrchestrationInput = {
+    case: validCase(),
+    caseID,
+    runID,
+    startedAt,
+    outputsPath: join("evals", caseID, "outputs", runID),
+    promptPath: join("evals", caseID, "prompt.md"),
+    targetWorktreePath: "target-worktree"
+  };
+  const implementInputs: ImplementWorkflowOptions[] = [];
+
+  const result = await defaultEvalAgentOrchestration(input, async (implementInput) => {
+    implementInputs.push(implementInput);
+    return {
+      ok: true,
+      value: {
+        release: releaseMetadata
+      }
+    };
+  });
+
+  assert.deepEqual(implementInputs, [
+    {
+      promptPath: input.promptPath,
+      targetWorktreePath: input.targetWorktreePath
+    }
+  ]);
+  assert.deepEqual(Object.keys(implementInputs[0] ?? {}).sort(), [
+    "promptPath",
+    "targetWorktreePath"
+  ]);
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      release: releaseMetadata
+    }
+  });
+});
+
+test("eval runner default agent adapter leaves grading input unchanged", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    const stdout: string[] = [];
+    const targetWorktreePath = join(repositoryRoot, "target-worktree");
+    const expectedPromptPath = join("evals", caseID, "prompt.md");
+    const implementInputs: ImplementWorkflowOptions[] = [];
+    let gradingInput: EvalAgentOrchestrationInput | undefined;
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      clock: () => fixedDate,
+      stdout: (message) => stdout.push(message),
+      setupWorkspace: async () => ({
+        ok: true,
+        value: {
+          targetWorktreePath
+        }
+      }),
+      runImplementAgent: async (input) => {
+        implementInputs.push(input);
+        return {
+          ok: true,
+          value: {
+            release: {
+              evalRunnerShouldNotValidateReleaseShape: true
+            }
+          }
+        } as unknown as ImplementWorkflowResult;
+      },
+      grade: async (input) => {
+        gradingInput = input;
+        return {
+          ok: true,
+          value: {
+            status: "success"
+          }
+        };
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(implementInputs, [
+      {
+        promptPath: expectedPromptPath,
+        targetWorktreePath
+      }
+    ]);
+    assert.ok(gradingInput);
+    assert.deepEqual(Object.keys(gradingInput).sort(), [
+      "case",
+      "caseID",
+      "outputsPath",
+      "promptPath",
+      "runID",
+      "startedAt",
+      "targetWorktreePath"
+    ]);
+    assert.equal("release" in gradingInput, false);
+    assert.match(stdout.join("\n"), /Status: success/);
+  });
+});
+
+test("eval runner maps default implement agent failures and skips grading", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    const events: string[] = [];
+    const stdout: string[] = [];
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      clock: () => fixedDate,
+      stdout: (message) => stdout.push(message),
+      setupWorkspace: async () => {
+        events.push("workspace");
+        return {
+          ok: true,
+          value: {
+            targetWorktreePath: "target-worktree"
+          }
+        };
+      },
+      runImplementAgent: async () => {
+        events.push("implement");
+        return {
+          ok: false,
+          error: {
+            stage: "sdk_execution",
+            message: "codex failed"
+          }
+        };
+      },
+      grade: async () => {
+        events.push("grading");
+        return {
+          ok: true,
+          value: {
+            status: "success"
+          }
+        };
+      }
+    });
+
+    assert.equal(exitCode, 1);
+    assert.deepEqual(events, ["workspace", "implement"]);
+    assert.match(stdout.join("\n"), /Agent orchestration failed/);
+    assert.match(stdout.join("\n"), /sdk_execution/);
+    assert.match(stdout.join("\n"), /codex failed/);
+  });
+});
+
+test("eval runner injected runAgent bypasses default implement adapter", async () => {
+  await withTemporaryRepository(async (repositoryRoot) => {
+    await writeEvalCase(repositoryRoot, caseID, validCase());
+    const events: string[] = [];
+
+    const exitCode = await runEvalCase(caseID, {
+      repositoryRoot,
+      clock: () => fixedDate,
+      stdout: () => {},
+      setupWorkspace: async () => {
+        events.push("workspace");
+        return {
+          ok: true,
+          value: {
+            targetWorktreePath: "target-worktree"
+          }
+        };
+      },
+      runAgent: async () => {
+        events.push("agent");
+        return { ok: true };
+      },
+      runImplementAgent: async () => {
+        throw new Error("default implement adapter should not run");
+      },
+      grade: async () => {
+        events.push("grading");
+        return {
+          ok: true,
+          value: {
+            status: "success"
+          }
+        };
+      }
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(events, ["workspace", "agent", "grading"]);
   });
 });
 
