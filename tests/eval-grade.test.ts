@@ -188,10 +188,6 @@ test("gradeEvalRun reports disallowed normalized changed files", async () => {
     });
 
     assert.equal(result.status, "fail");
-    assert.deepEqual(result.fileChanges, {
-      changedFiles: ["src/index.ts", "docs/readme.md"],
-      disallowedChangedFiles: ["docs/readme.md"]
-    });
     assert.deepEqual(
       result.report.checks.map((check) => [check.name, check.status]),
       [

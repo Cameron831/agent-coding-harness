@@ -112,8 +112,6 @@ export interface EvalGradeReport {
 export interface EvalGradeResult {
   status: EvalGradeStatus;
   report: EvalGradeReport;
-  fileChanges: EvalGradeFileChanges;
-  testCommand: EvalGradeCommandResult;
 }
 
 export async function gradeEvalRun(
@@ -183,8 +181,6 @@ export async function gradeEvalRun(
   return {
     status,
     report,
-    fileChanges,
-    testCommand
   };
 }
 
