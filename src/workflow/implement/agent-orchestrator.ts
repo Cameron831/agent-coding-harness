@@ -133,7 +133,7 @@ export const implementReleaseOutputSchema = {
 export function buildImplementCodexConfig(): ImplementCodexConfigObject {
   return {
     model: "gpt-5.5",
-    model_reasoning_effort: "high",
+    model_reasoning_effort: "xhigh",
     approval_policy: "never",
     sandbox_mode: "workspace-write",
     sandbox_workspace_write: {
