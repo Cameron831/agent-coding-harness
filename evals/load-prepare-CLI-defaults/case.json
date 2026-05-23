@@ -1,0 +1,7 @@
+{
+"id": "load-prepare-CLI-defaults",
+"testCommand": "npm run test",
+"allowedChangedFiles": [
+		"src/workflow/prepare/cli-prepare.ts"
+	]
+}
