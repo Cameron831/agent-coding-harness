@@ -55,8 +55,15 @@ export type EvalWorkspaceSetupResult =
       reason: string;
     };
 
+export interface EvalWorkspaceSetupInput extends EvalRunContext {
+  repositoryRoot: string;
+  evalParentPath?: string;
+  workspaceDependencies?: EvalWorkspaceDependencies;
+}
+
 export interface EvalAgentOrchestrationInput extends EvalRunContext {
   targetWorktreePath: string;
+  runImplementAgent?: EvalImplementAgentOrchestration;
 }
 
 export interface EvalAgentOrchestrationSuccess {
@@ -89,7 +96,7 @@ export type EvalGradingResult =
     };
 
 export type EvalWorkspaceSetup = (
-  context: EvalRunContext
+  input: EvalWorkspaceSetupInput
 ) => Promise<EvalWorkspaceSetupResult>;
 
 export type EvalAgentOrchestration = (
@@ -103,6 +110,8 @@ export type EvalImplementAgentOrchestration = (
 export interface EvalGradingInput extends EvalRunContext {
   release: unknown;
   tempPath: string;
+  repositoryRoot: string;
+  gradeDependencies?: EvalGradeDependencies;
 }
 
 export type EvalGrading = (
@@ -211,27 +220,23 @@ export async function runEvalCase(
     return 1;
   }
 
-  const setupWorkspace =
-    dependencies.setupWorkspace ??
-    ((setupContext) =>
-      defaultEvalWorkspaceSetup(setupContext, {
-        repositoryRoot,
-        evalParentPath:
-          dependencies.evalParentPath ?? parsedEvalEnv.evalParentPath,
-        workspaceDependencies: dependencies.workspaceDependencies
-      }));
-  const runAgent =
-    dependencies.runAgent ??
-    ((input) =>
-      defaultEvalAgentOrchestration(
-        input,
-        dependencies.runImplementAgent ?? runImplementWorkflow
-      ));
-  const grade = dependencies.grade;
+  const evalParentPath =
+    dependencies.evalParentPath ?? parsedEvalEnv.evalParentPath;
+  const setupWorkspace = dependencies.setupWorkspace ?? defaultEvalWorkspaceSetup;
+  const runAgent = dependencies.runAgent ?? defaultEvalAgentOrchestration;
+  const grade = dependencies.grade ?? defaultEvalGrading;
 
   let workspace;
+  const setupInput: EvalWorkspaceSetupInput = {
+    ...context,
+    repositoryRoot,
+    ...(evalParentPath !== undefined ? { evalParentPath } : {}),
+    ...(dependencies.workspaceDependencies !== undefined
+      ? { workspaceDependencies: dependencies.workspaceDependencies }
+      : {})
+  };
   try {
-    workspace = await setupWorkspace(context);
+    workspace = await setupWorkspace(setupInput);
   } catch (cause) {
     stdout(failureSummary(summaryBase, "Workspace setup failed", cause));
     return 1;
@@ -243,7 +248,10 @@ export async function runEvalCase(
 
   const agentInput: EvalAgentOrchestrationInput = {
     ...context,
-    targetWorktreePath: workspace.value.targetWorktreePath
+    targetWorktreePath: workspace.value.targetWorktreePath,
+    ...(dependencies.runImplementAgent !== undefined
+      ? { runImplementAgent: dependencies.runImplementAgent }
+      : {})
   };
 
   let agentResult;
@@ -263,19 +271,16 @@ export async function runEvalCase(
   const gradingInput: EvalGradingInput = {
     ...context,
     release: agentResult.value.release,
-    tempPath: workspace.value.targetWorktreePath
+    tempPath: workspace.value.targetWorktreePath,
+    repositoryRoot,
+    ...(dependencies.gradeDependencies !== undefined
+      ? { gradeDependencies: dependencies.gradeDependencies }
+      : {})
   };
 
   let gradingResult;
   try {
-    gradingResult =
-      grade === undefined
-        ? await defaultEvalGrading(
-            gradingInput,
-            repositoryRoot,
-            dependencies.gradeDependencies
-          )
-        : await grade(gradingInput);
+    gradingResult = await grade(gradingInput);
   } catch (cause) {
     stdout(failureSummary(summaryBase, "Grading failed", cause));
     return 1;
@@ -410,14 +415,9 @@ function validateEvalCaseMetadata(
 }
 
 async function defaultEvalWorkspaceSetup(
-  context: EvalRunContext,
-  options: {
-    repositoryRoot: string;
-    evalParentPath?: string;
-    workspaceDependencies?: EvalWorkspaceDependencies;
-  }
+  input: EvalWorkspaceSetupInput
 ): Promise<EvalWorkspaceSetupResult> {
-  if (options.evalParentPath === undefined) {
+  if (input.evalParentPath === undefined) {
     return {
       ok: false,
       reason: "evalParentPath is required for default eval workspace setup."
@@ -426,12 +426,12 @@ async function defaultEvalWorkspaceSetup(
 
   const workspace = await setupEvalWorkspace(
     {
-      caseID: context.caseID,
-      runID: context.runID,
-      evalParentPath: options.evalParentPath,
-      repositoryRoot: options.repositoryRoot
+      caseID: input.caseID,
+      runID: input.runID,
+      evalParentPath: input.evalParentPath,
+      repositoryRoot: input.repositoryRoot
     },
-    options.workspaceDependencies
+    input.workspaceDependencies
   );
 
   return {
@@ -443,9 +443,9 @@ async function defaultEvalWorkspaceSetup(
 }
 
 export async function defaultEvalAgentOrchestration(
-  input: EvalAgentOrchestrationInput,
-  runImplementAgent: EvalImplementAgentOrchestration = runImplementWorkflow
+  input: EvalAgentOrchestrationInput
 ): Promise<EvalAgentOrchestrationResult> {
+  const runImplementAgent = input.runImplementAgent ?? runImplementWorkflow;
   const implementResult = await runImplementAgent({
     promptPath: input.promptPath,
     targetWorktreePath: input.targetWorktreePath
@@ -467,9 +467,7 @@ export async function defaultEvalAgentOrchestration(
 }
 
 export async function defaultEvalGrading(
-  input: EvalGradingInput,
-  repositoryRoot: string,
-  gradeDependencies: EvalGradeDependencies = {}
+  input: EvalGradingInput
 ): Promise<EvalGradingResult> {
   const result = await gradeEvalRun(
     {
@@ -478,11 +476,11 @@ export async function defaultEvalGrading(
       startedAt: input.startedAt,
       case: input.case,
       release: input.release,
-      promptPath: resolveRepositoryPath(repositoryRoot, input.promptPath),
+      promptPath: resolveRepositoryPath(input.repositoryRoot, input.promptPath),
       tempPath: input.tempPath,
-      outputsPath: resolveRepositoryPath(repositoryRoot, input.outputsPath)
+      outputsPath: resolveRepositoryPath(input.repositoryRoot, input.outputsPath)
     },
-    gradeDependencies
+    input.gradeDependencies
   );
 
   return {
