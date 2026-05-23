@@ -52,7 +52,7 @@ class FakeCodexClient implements ImplementCodexClient {
 test("implement workflow builds the approved Codex config", () => {
   assert.deepEqual(buildImplementCodexConfig(), {
     model: "gpt-5.5",
-    model_reasoning_effort: "high",
+    model_reasoning_effort: "xhigh",
     approval_policy: "never",
     sandbox_mode: "workspace-write",
     sandbox_workspace_write: {
