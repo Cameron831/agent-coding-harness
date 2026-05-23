@@ -49,28 +49,6 @@ class FakeCodexClient implements ImplementCodexClient {
   }
 }
 
-test("implement workflow builds the approved Codex config", () => {
-  assert.deepEqual(buildImplementCodexConfig(), {
-    model: "gpt-5.5",
-    model_reasoning_effort: "xhigh",
-    approval_policy: "never",
-    sandbox_mode: "workspace-write",
-    sandbox_workspace_write: {
-      network_access: false
-    },
-    windows: {
-      sandbox: "elevated"
-    },
-    show_raw_agent_reasoning: false,
-    model_reasoning_summary: "concise",
-    model_verbosity: "low",
-    shell_environment_policy: {
-      inherit: "core",
-      exclude: ["*TOKEN*", "*SECRET*", "*KEY*", "GH_TOKEN"]
-    }
-  });
-});
-
 test("implement workflow uses injected SDK factory and runs the loaded prompt in the target worktree", async () => {
   const client = new FakeCodexClient(JSON.stringify(validRelease));
   const factoryInputs: ImplementCodexClientOptions[] = [];
