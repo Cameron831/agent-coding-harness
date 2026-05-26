@@ -32,10 +32,11 @@ export async function setupEvalWorkspace(
 ): Promise<SetupEvalWorkspaceSuccess> {
   const repositoryRoot = input.repositoryRoot ?? process.cwd();
   const fixturePath = join(repositoryRoot, "evals", input.caseID, "fixture");
-  const tempPath = join(input.evalParentPath, input.caseID, input.runID);
+  const evalWorkspaceRoot = join(input.evalParentPath, "agent-workforce-evals");
+  const tempPath = join(evalWorkspaceRoot, input.caseID, input.runID);
 
   await assertFixtureDirectory(fixturePath);
-  await mkdir(join(input.evalParentPath, input.caseID), { recursive: true });
+  await mkdir(join(evalWorkspaceRoot, input.caseID), { recursive: true });
   await createNewWorkspaceDirectory(tempPath);
 
   try {

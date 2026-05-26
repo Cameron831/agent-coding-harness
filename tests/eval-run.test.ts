@@ -419,12 +419,17 @@ test("eval runner injected runAgent bypasses default implement adapter", async (
   });
 });
 
-test("eval runner default setup uses eval parent path as target worktree", async () => {
+test("eval runner default setup uses grouped eval workspace path as target worktree", async () => {
   await withTemporaryRepository(async (repositoryRoot) => {
     await writeEvalCase(repositoryRoot, caseID, validCase());
     await writeEvalFixture(repositoryRoot, caseID);
     const evalParentPath = join(repositoryRoot, "eval-temp");
-    const expectedTempPath = join(evalParentPath, caseID, runID);
+    const expectedTempPath = join(
+      evalParentPath,
+      "agent-workforce-evals",
+      caseID,
+      runID
+    );
     const gitRunner = new RecordingEvalWorkspaceGitRunner();
     const stdout: string[] = [];
     let agentInput: EvalAgentOrchestrationInput | undefined;
