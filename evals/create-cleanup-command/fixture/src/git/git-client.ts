@@ -195,8 +195,7 @@ export class LocalGitAutomationClient implements GitAutomationClient {
       "-C",
       input.targetWorktreePath,
       "status",
-      "--porcelain",
-      "--untracked-files=all"
+      "--porcelain"
     ]);
     if (!result.ok) {
       return result;
@@ -348,14 +347,11 @@ export class LocalGitAutomationClient implements GitAutomationClient {
         input.targetWorktreePath
       )
     ) {
-      return {
-        ok: true,
-        value: {
-          targetRepositoryPath: input.targetRepositoryPath,
-          targetWorktreePath: input.targetWorktreePath,
-          removed: false
-        }
-      };
+      return failure({
+        code: "validation_failed",
+        message:
+          "Target worktree path is not associated with the target repository."
+      });
     }
 
     const statusResult = await this.runCommand([

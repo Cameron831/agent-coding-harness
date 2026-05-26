@@ -8,3 +8,4 @@ node_modules/
 .runs/
 evals/load-prepare-CLI-defaults/outputs/
 evals/worktree-cleanup-idempotency/outputs/
+evals/create-cleanup-command/outputs/

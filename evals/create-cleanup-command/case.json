@@ -1,0 +1,10 @@
+{
+"id": "create-cleanup-command",
+"testCommand": "npm run test",
+"allowedChangedFiles": [
+		"src/workflow/cleanup/cleanup.ts",
+        "src/workflow/cleanup/cli-cleanup.ts",
+        "src/index.ts",
+        "src/cli.ts"
+	]
+}
