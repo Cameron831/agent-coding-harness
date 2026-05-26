@@ -254,7 +254,7 @@ test("LocalGitAutomationClient gets changed files from porcelain status output",
   });
 
   assert.deepEqual(runner.calls, [
-    ["-C", validWorktreePath, "status", "--porcelain", "--untracked-files=all"]
+    ["-C", validWorktreePath, "status", "--porcelain"]
   ]);
   assert.equal(runner.calls[0]?.includes(process.cwd()), false);
   assert.deepEqual(result, {
@@ -852,7 +852,7 @@ test("LocalGitAutomationClient validates deleteLocalBranch input before running 
   }
 });
 
-test("LocalGitAutomationClient treats already absent cleanup as a no-op", async () => {
+test("LocalGitAutomationClient refuses cleanup for a worktree not associated with the target repository", async () => {
   const runner = new FakeGitCommandRunner({
     exitCode: 0,
     stdout: "worktree C:/repos/worktrees/other\nHEAD abc123\n",
@@ -871,13 +871,8 @@ test("LocalGitAutomationClient treats already absent cleanup as a no-op", async 
       "--porcelain"
     ]
   ]);
-  assert.deepEqual(result, {
-    ok: true,
-    value: {
-      ...validCleanupInput,
-      removed: false
-    }
-  });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok || result.error.code, "validation_failed");
 });
 
 test("LocalGitAutomationClient validates stageFiles input before running git", async () => {
