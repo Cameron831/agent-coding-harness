@@ -14,7 +14,12 @@ test("setupEvalWorkspace copies fixtures and runs baseline git commands", async 
     const caseID = "copy-fixture";
     const runID = "run-1";
     const evalParentPath = join(repositoryRoot, "eval-temp");
-    const tempPath = join(evalParentPath, caseID, runID);
+    const tempPath = join(
+      evalParentPath,
+      "agent-workforce-evals",
+      caseID,
+      runID
+    );
     await writeFixture(repositoryRoot, caseID);
 
     const gitRunner = new RecordingGitRunner(async (command) => {
@@ -65,7 +70,9 @@ test("setupEvalWorkspace fails clearly when the workspace already exists", async
     const runID = "run-1";
     const evalParentPath = join(repositoryRoot, "eval-temp");
     await writeFixture(repositoryRoot, caseID);
-    await mkdir(join(evalParentPath, caseID, runID), { recursive: true });
+    await mkdir(join(evalParentPath, "agent-workforce-evals", caseID, runID), {
+      recursive: true
+    });
 
     await assert.rejects(
       setupEvalWorkspace({ caseID, runID, evalParentPath, repositoryRoot }),
